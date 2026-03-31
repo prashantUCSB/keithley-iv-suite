@@ -20,7 +20,7 @@ data/
 *.xlsx
 
 # IDE
-.vscode/
+# Note: .vscode/ is intentionally tracked so students get F5 run configs
 .idea/
 *.swp
 *.swo

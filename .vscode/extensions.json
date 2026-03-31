@@ -1,0 +1,18 @@
+{
+    // VSCode will prompt students to install these when they open the folder.
+    // All are free. Only the first two are strictly required.
+    "recommendations": [
+        // ── Required ─────────────────────────────────────────────────────
+        "ms-python.python",           // Python language support + interpreter picker
+        "ms-python.debugpy",          // F5 debugging (usually auto-installed with Python)
+
+        // ── Strongly recommended ──────────────────────────────────────────
+        "ms-python.vscode-pylance",   // Fast autocomplete and type checking
+        "redhat.vscode-yaml",         // Syntax highlighting for recipe .yaml files
+
+        // ── Nice to have ──────────────────────────────────────────────────
+        "usernamehw.errorlens",       // Shows errors inline in the editor (great for learning)
+        "eamodio.gitlens",            // See git history and who changed what
+        "mechatroner.rainbow-csv"     // Colour-coded CSV viewer for exported data
+    ]
+}

@@ -1,0 +1,41 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // ── Normal run (F5) ───────────────────────────────────────────
+            "name": "▶  Run Keithley IV Suite",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            }
+        },
+        {
+            // ── Debug mode (Ctrl+Shift+D → select this config) ────────────
+            // Stops at breakpoints so you can inspect variables
+            "name": "🐛  Debug Keithley IV Suite",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            }
+        },
+        {
+            // ── Test a single driver without instruments (dry-run) ────────
+            "name": "🔬  Test VISA Scan Only",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "keithley_iv_suite.instruments.visa_manager",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
+        }
+    ]
+}
