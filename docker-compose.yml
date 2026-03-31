@@ -1,0 +1,50 @@
+# ============================================================
+# Keithley IV Suite — docker-compose
+#
+# For Linux hosts with GPIB/USB instruments.
+# For Windows hosts see scripts/run_docker_windows.bat.
+# ============================================================
+
+services:
+  iv-suite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: keithley-iv-suite:latest
+    container_name: keithley-iv-suite
+
+    environment:
+      # X11 display — set by the host shell
+      - DISPLAY=${DISPLAY:-:0}
+      # Use host X11 auth if needed
+      - XAUTHORITY=${XAUTHORITY:-}
+
+    volumes:
+      # X11 socket
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Persistent output data
+      - iv_data:/root/Documents/IV_Data
+      # Optional: mount a local recipes folder
+      - ./recipes:/app/recipes:ro
+
+    # network_mode: host gives direct access to GPIB-Ethernet
+    # and avoids X11 auth issues on some Linux setups.
+    network_mode: host
+
+    devices:
+      # USB VISA instruments (GPIB-USB-HS, USB-TMC etc.)
+      # Remove if you only use Ethernet VISA.
+      - /dev/bus/usb:/dev/bus/usb
+
+    # Needed for GPIB kernel module access
+    privileged: false
+    cap_add:
+      - NET_ADMIN   # for Ethernet VISA with VXI-11
+
+    restart: "no"
+    stdin_open: true
+    tty: true
+
+volumes:
+  iv_data:
+    name: keithley_iv_data

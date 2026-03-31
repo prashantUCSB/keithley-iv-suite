@@ -11,7 +11,7 @@
 ## Features
 
 | Feature | Details |
-|---|---|
+| --- | --- |
 | **Instruments** | Keithley 2400, 2401 (SCPI) · 2602, 2614B (TSP/Lua) |
 | **VISA backends** | NI-VISA · Keysight IO Libraries · pyvisa-py (pure Python fallback) |
 | **Measurements** | nMOS Transfer (Id-Vgs) · nMOS Output (Id-Vds family) · Resistor IV |
@@ -23,24 +23,68 @@
 
 ---
 
-## Quick Start
+## Deployment
 
-### 1. Install dependencies
+Three options — pick whichever fits your setup:
+
+---
+
+### Option A — Windows `install.bat` (Recommended for lab computers)
+
+Works with GPIB, USB, and Ethernet VISA. Requires Python 3.10+ installed on each machine.
+
+```text
+1. Install NI-VISA or Keysight IO Libraries on the computer (if not already present)
+2. Double-click:  scripts\install_windows.bat   (run once per computer)
+3. Double-click:  scripts\run_windows.bat        (launch the app)
+```
+
+> **VISA backend note:** The app auto-detects NI-VISA or Keysight IO at startup and falls
+> back to `pyvisa-py` if neither is installed.
+
+- NI-VISA: <https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html>
+- Keysight IO: <https://www.keysight.com/find/iosuites>
+
+---
+
+### Option B — Standalone `.exe` (Zero-Python deployment)
+
+Build once, copy to all computers. No Python needed on targets.
+
+```text
+1. Run install_windows.bat on your build machine
+2. Double-click:  scripts\build_exe.bat
+3. Copy dist\Keithley_IV_Suite\ folder to each instrument computer
+4. Run Keithley_IV_Suite.exe  (VISA drivers still required on targets)
+```
+
+---
+
+### Option C — Docker
+
+**Best for Linux hosts.** On Windows, Docker only works fully with **Ethernet VISA** instruments (USB/GPIB passthrough through Hyper-V is not reliable).
+
+```bash
+# Linux
+docker compose up --build
+
+# Windows (Ethernet VISA only — requires VcXsrv X server running)
+scripts\run_docker_windows.bat
+```
+
+| VISA interface | Docker/Linux | Docker/Windows |
+| --- | --- | --- |
+| Ethernet (TCPIP) | ✓ | ✓ |
+| USB-TMC | ✓ (with `--device`) | ⚠ needs usbipd-win |
+| GPIB-USB | ✓ (with `--privileged`) | ✗ |
+
+---
+
+### Quick Start (dev machine)
 
 ```bash
 cd keithley-iv-suite
 pip install -r requirements.txt
-```
-
-> **VISA backend note:** This app tries NI-VISA or Keysight IO first (whichever is installed),
-> then falls back to `pyvisa-py`.  
-> - NI-VISA: install from [ni.com/visa](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html)  
-> - Keysight IO: install from [keysight.com/find/iosuites](https://www.keysight.com/us/en/lib/software-detail/computer-software/io-libraries-suite-downloads-2175637.html)  
-> - Pure Python: `pip install pyvisa-py pyusb gpib-ctypes` (limited functionality for some interfaces)
-
-### 2. Run
-
-```bash
 python main.py
 ```
 
@@ -48,7 +92,7 @@ python main.py
 
 ## Interface Overview
 
-```
+```text
 ┌─────────────────┬───────────────────────────────┬────────────┐
 │  INSTRUMENTS    │   SWEEP CONFIGURATION         │  QUEUE     │
 │  ─────────────  │   (tabbed: Transfer/Output/   │  ────────  │
@@ -75,14 +119,14 @@ python main.py
 ## SMU–to–Instrument Mapping
 
 | Keithley Model | Driver | Channels | Interface |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 2400 | SCPI | Single | GPIB / USB |
 | 2401 | SCPI | Single | GPIB / USB |
 | 2602 | TSP (Lua) | A, B | GPIB / USB |
 | 2614B | TSP (Lua) | A, B | GPIB / USB / Ethernet |
 
-The 2600-series instruments expose two independent channels (smua / smub).  
-When you connect a 2602 or 2614B the app connects **Channel A** by default.  
+The 2600-series instruments expose two independent channels (smua / smub).
+When you connect a 2602 or 2614B the app connects **Channel A** by default.
 To use Channel B, add the same instrument again in the Manual Entry box with `Channel B` selected.
 
 ---
@@ -91,7 +135,7 @@ To use Channel B, add the same instrument again in the Manual Entry box with `Ch
 
 Automate full measurement sequences by loading a YAML or JSON recipe:
 
-```
+```text
 File → Load Recipe…
 ```
 
@@ -127,7 +171,7 @@ measurements:
 ## Keyboard Shortcuts
 
 | Action | Shortcut |
-|---|---|
+| --- | --- |
 | Run current sweep | F5 |
 | Stop measurement | Esc |
 | Export last result | Ctrl+S |
@@ -139,11 +183,20 @@ measurements:
 
 ## Project Structure
 
-```
+```text
 keithley-iv-suite/
 ├── main.py
 ├── requirements.txt
 ├── pyproject.toml
+├── Dockerfile
+├── docker-compose.yml
+├── keithley_iv_suite.spec
+├── scripts/
+│   ├── install_windows.bat
+│   ├── run_windows.bat
+│   ├── build_exe.bat
+│   ├── run_docker_windows.bat
+│   └── run_linux.sh
 ├── recipes/
 │   ├── nmos_full_characterization.yaml
 │   └── resistor_sweep.yaml
@@ -163,8 +216,8 @@ keithley-iv-suite/
 
 ## Multi-Computer Setup
 
-The VISA backend is auto-detected at startup.  
-On machines with **both** NI-VISA and Keysight IO installed, NI-VISA is preferred.  
+The VISA backend is auto-detected at startup.
+On machines with **both** NI-VISA and Keysight IO installed, NI-VISA is preferred.
 To force a specific backend, edit `VISAManager("@py")` in `main_window.py` or set the
 `PYVISA_LIBRARY` environment variable.
 
