@@ -1,0 +1,131 @@
+"""Keithley 2602 / 2614B TSP (Lua) driver."""
+from __future__ import annotations
+
+import logging
+import time
+from typing import Optional
+
+import pyvisa
+
+from .smu_base import SMUBase
+
+log = logging.getLogger(__name__)
+
+
+class SMU2600(SMUBase):
+    """
+    Drives one channel (A or B) of a Keithley 2602 or 2614B via TSP (Lua).
+
+    The 2600-series instruments use the Test Script Processor instead of SCPI.
+    Commands are Lua statements sent over the VISA connection.
+
+    Channel selection: pass channel='A' or channel='B'.
+    The TSP object for channel A is ``smua``, for B it is ``smub``.
+    """
+
+    MODEL_IDS = ("2602", "2602A", "2614B", "2614")
+
+    def __init__(
+        self,
+        resource: pyvisa.resources.Resource,
+        channel: str = "A",
+        nplc: float = 1.0,
+        delay_s: float = 0.02,
+    ) -> None:
+        if channel.upper() not in ("A", "B"):
+            raise ValueError(f"Channel must be 'A' or 'B', got '{channel}'")
+        super().__init__(resource, channel=channel.upper())
+        self._smu = f"smu{channel.lower()}"   # "smua" or "smub"
+        self._nplc = nplc
+        self._delay_s = delay_s
+        self._compliance = 0.1
+        self._output_on = False
+
+    # ------------------------------------------------------------------
+    # Private TSP helpers
+    # ------------------------------------------------------------------
+
+    def _tsp(self, cmd: str) -> None:
+        """Write a TSP (Lua) command."""
+        self._write(cmd)
+
+    def _tsp_query(self, expr: str) -> str:
+        """Evaluate a TSP expression and return the printed result."""
+        self._write(f"print({expr})")
+        return self._resource.read().strip()
+
+    # ------------------------------------------------------------------
+    # SMUBase implementation
+    # ------------------------------------------------------------------
+
+    def identify(self) -> str:
+        return self._query("*IDN?")
+
+    def reset(self) -> None:
+        self._tsp(f"{self._smu}.reset()")
+        time.sleep(0.1)
+        self._tsp(f"{self._smu}.measure.nplc = {self._nplc}")
+        # Disable autozero for speed; re-enable if accuracy is critical
+        self._tsp(f"{self._smu}.measure.autozero = {self._smu}.AUTOZERO_AUTO")
+        log.debug("SMU2600 channel %s reset complete", self._channel)
+
+    def configure_voltage_source(
+        self,
+        compliance_current: float,
+        voltage_range: Optional[float] = None,
+    ) -> None:
+        self._compliance = compliance_current
+        smu = self._smu
+        self._tsp(f"{smu}.source.func = {smu}.OUTPUT_DCVOLTS")
+        if voltage_range is not None:
+            self._tsp(f"{smu}.source.rangev = {voltage_range}")
+        else:
+            self._tsp(f"{smu}.source.autorangev = {smu}.AUTORANGE_ON")
+        self._tsp(f"{smu}.source.limiti = {compliance_current}")
+        self._tsp(f"{smu}.measure.autorangei = {smu}.AUTORANGE_ON")
+        self._tsp(f"{smu}.source.levelv = 0")
+        log.debug(
+            "SMU2600 Ch%s configured: Vsource, Ilim=%.3e A",
+            self._channel,
+            compliance_current,
+        )
+
+    def set_voltage(self, voltage: float) -> None:
+        self._tsp(f"{self._smu}.source.levelv = {voltage:.6g}")
+
+    def output_on(self) -> None:
+        self._tsp(f"{self._smu}.output = {self._smu}.OUTPUT_ON")
+        self._output_on = True
+        time.sleep(self._delay_s)
+
+    def output_off(self) -> None:
+        self._tsp(f"{self._smu}.output = {self._smu}.OUTPUT_OFF")
+        self._output_on = False
+
+    def measure_iv(self) -> tuple[float, float]:
+        """Return (current_A, voltage_V)."""
+        raw = self._tsp_query(f"{self._smu}.measure.iv()")
+        # TSP returns "current\tvoltage" or "current voltage"
+        parts = raw.replace("\t", " ").split()
+        current = float(parts[0])
+        voltage = float(parts[1]) if len(parts) > 1 else 0.0
+        return current, voltage
+
+    # ------------------------------------------------------------------
+    # Extras
+    # ------------------------------------------------------------------
+
+    def set_nplc(self, nplc: float) -> None:
+        self._nplc = nplc
+        self._tsp(f"{self._smu}.measure.nplc = {nplc}")
+
+    def set_delay(self, delay_s: float) -> None:
+        self._delay_s = delay_s
+
+    @property
+    def compliance_current(self) -> float:
+        return self._compliance
+
+    def in_compliance(self) -> bool:
+        raw = self._tsp_query(f"{self._smu}.source.compliance")
+        return raw.strip().lower() in ("true", "1")

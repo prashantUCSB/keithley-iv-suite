@@ -1,0 +1,21 @@
+# ============================================================
+# Resistor IV Sweep Recipe
+# Two-terminal voltage sweep.  Terminal 2 should be grounded
+# at the instrument commons or explicitly via a second SMU.
+# ============================================================
+
+measurements:
+
+  - type: resistor_iv
+    label: "Resistor IV — ±1V"
+    v_start: -1.0
+    v_stop:   1.0
+    v_step:   0.025
+    compliance_A: 0.1
+    nplc: 1.0
+    settling_delay_s: 0.02
+    assignments:
+      terminal_1:
+        instrument: "Keithley 2602"
+        channel: "A"
+      terminal_2: gnd

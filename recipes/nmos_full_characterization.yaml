@@ -1,0 +1,45 @@
+# ============================================================
+# nMOS Full Characterization Recipe
+# Runs a transfer curve followed by a full output curve family.
+# Edit the assignments section to match your bench wiring.
+# ============================================================
+
+measurements:
+
+  - type: nmos_transfer
+    label: "nMOS Transfer — Vth extraction"
+    vgs_start: -1.0
+    vgs_stop:  3.0
+    vgs_step:  0.05
+    vds_fixed: 0.1
+    compliance_drain_A: 0.1
+    compliance_gate_A:  0.01
+    nplc: 1.0
+    settling_delay_s: 0.02
+    assignments:
+      gate:
+        instrument: "Keithley 2400"
+        channel: ""
+      drain:
+        instrument: "Keithley 2614B"
+        channel: "A"
+      source: gnd
+
+  - type: nmos_output
+    label: "nMOS Output — Id-Vds family"
+    vds_start: 0.0
+    vds_stop:  3.0
+    vds_step:  0.05
+    vgs_list: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    compliance_drain_A: 0.1
+    compliance_gate_A:  0.01
+    nplc: 1.0
+    settling_delay_s: 0.02
+    assignments:
+      gate:
+        instrument: "Keithley 2400"
+        channel: ""
+      drain:
+        instrument: "Keithley 2614B"
+        channel: "A"
+      source: gnd
