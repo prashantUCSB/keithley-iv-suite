@@ -17,4 +17,5 @@ if not exist "%VENV_PY%" (
 )
 
 cd /d "%APP_DIR%"
+set "PYTHONPATH=%APP_DIR%\src"
 "%VENV_PY%" main.py
