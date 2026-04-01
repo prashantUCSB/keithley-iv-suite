@@ -103,12 +103,30 @@ class SMU2600(SMUBase):
         self._output_on = False
 
     def measure_iv(self) -> tuple[float, float]:
-        """Return (current_A, voltage_V)."""
+        """Return (current_A, voltage_V).
+
+        TSP print() separates Lua multiple-return values with tabs, but
+        firmware versions vary in trailing whitespace and status tokens.
+        We parse defensively and fall back to separate i/v queries if
+        the simultaneous response cannot be cleanly split into two floats.
+        """
         raw = self._tsp_query(f"{self._smu}.measure.iv()")
-        # TSP returns "current\tvoltage" or "current voltage"
-        parts = raw.replace("\t", " ").split()
-        current = float(parts[0])
-        voltage = float(parts[1]) if len(parts) > 1 else 0.0
+        floats: list[float] = []
+        for token in raw.strip().split():
+            try:
+                floats.append(float(token))
+            except ValueError:
+                pass  # skip non-numeric tokens (status words, stray chars)
+        if len(floats) >= 2:
+            return floats[0], floats[1]
+        # Fallback: two unambiguous single-value queries
+        log.warning(
+            "measure.iv() response not parseable (%r); "
+            "falling back to separate i/v queries",
+            raw,
+        )
+        current = float(self._tsp_query(f"{self._smu}.measure.i()"))
+        voltage = float(self._tsp_query(f"{self._smu}.measure.v()"))
         return current, voltage
 
     # ------------------------------------------------------------------

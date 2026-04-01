@@ -87,7 +87,8 @@ class InstrumentRow(QWidget):
         layout.addLayout(info, stretch=1)
 
         self._btn = QPushButton("Connect")
-        self._btn.setFixedWidth(80)
+        self._btn.setMinimumWidth(90)
+        self._btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self._btn.clicked.connect(self._on_button)
         layout.addWidget(self._btn)
 
