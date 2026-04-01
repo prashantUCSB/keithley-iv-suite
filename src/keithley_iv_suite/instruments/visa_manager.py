@@ -75,7 +75,8 @@ class VISAManager:
         for rstr in self.list_resources():
             info = self._parse_resource_string(rstr)
             try:
-                res = self._rm.open_resource(rstr, open_timeout=500)  # type: ignore[union-attr]
+                res = self._rm.open_resource(rstr, open_timeout=2000)  # type: ignore[union-attr]
+                res.timeout = 2000  # 2 s — 2600-series can be slow to respond
                 try:
                     idn = res.query("*IDN?").strip()
                 except Exception:

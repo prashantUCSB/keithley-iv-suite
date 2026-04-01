@@ -267,19 +267,33 @@ class InstrumentPanel(QWidget):
         if not row:
             return
         info = self._resources.get(resource_string, {})
-        model_hint = info.get("model_hint", "") or self._guess_model(info.get("idn", ""))
+        # model_hint is only trusted when set explicitly via Manual Entry.
+        # For scan-discovered instruments it is absent — we always re-query
+        # *IDN? after opening to get the ground truth.
+        manual_model_hint = info.get("model_hint", "")
 
         try:
             res = self._vm.open_resource(resource_string)
+
+            # Query real IDN before creating any typed driver.
+            # This is the authoritative source for model detection.
+            try:
+                real_idn = res.query("*IDN?").strip()
+            except Exception:
+                real_idn = ""
+            log.debug("IDN response for %s: %r", resource_string, real_idn)
+
+            # Manual hint takes priority; fall back to IDN parse; last resort "2400"
+            model_hint = manual_model_hint or self._guess_model(real_idn)
+
             driver = self._make_driver(res, model_hint, resource_string)
             driver.reset()
-            idn = driver.identify()
-            instr_id = self._label_for(resource_string, model_hint, idn)
+            instr_id = self._label_for(resource_string, model_hint, real_idn)
             self._smu_map[instr_id] = driver
             row.set_connected(True)
             row.friendly = instr_id
             row._name_lbl.setText(instr_id)
-            log.info("Connected: %s (%s)", instr_id, resource_string)
+            log.info("Connected: %s  IDN=%r  (%s)", instr_id, real_idn, resource_string)
             self._status_lbl.setText(f"Connected: {instr_id}")
         except Exception as exc:
             row.set_error()
@@ -326,11 +340,18 @@ class InstrumentPanel(QWidget):
 
     @staticmethod
     def _label_for(resource_string: str, model_hint: str, idn: str) -> str:
+        # Prefer the real IDN — it is always more accurate than a guessed hint.
+        # Keithley IDN format: "KEITHLEY INSTRUMENTS INC.,MODEL 2614B,SN,FW"
+        # or:                  "Keithley Instruments Inc., Model 2614B, SN, FW"
+        if idn:
+            parts = [p.strip() for p in idn.split(",")]
+            if len(parts) >= 2:
+                # parts[1] is e.g. "MODEL 2614B" or "Model 2400"
+                model_field = parts[1].upper().replace("MODEL", "").strip()
+                if model_field:
+                    return f"Keithley {model_field}"
         if model_hint:
             return f"Keithley {model_hint}"
-        parts = idn.split(",")
-        if len(parts) >= 2:
-            return f"{parts[0].strip()} {parts[1].strip()}"
         return resource_string
 
     @property

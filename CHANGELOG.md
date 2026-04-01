@@ -9,6 +9,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.3] — 2026-04-01
+
+### Fixed
+
+- **2614B misidentified as 2400** — `_connect_instrument()` now queries `*IDN?`
+  directly on the freshly-opened VISA resource before creating any typed driver.
+  Previously, model detection relied on the scan-time IDN which could be empty
+  (500 ms timeout too short for 2600-series), causing `_guess_model()` to fall
+  back to `"2400"` and create an `SMU2400` driver for the 2614B.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+- **Label ignored real IDN** — `_label_for()` trusted the guessed `model_hint`
+  over the actual `*IDN?` response. Rewrote to parse `IDN` field 2 (`"MODEL 2614B"`)
+  first; `model_hint` is now only used as a fallback.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+- **Scan-time IDN timeout** — `list_resources_with_info()` raised `open_timeout`
+  from 500 ms to 2000 ms and set `res.timeout = 2000` so 2600-series instruments
+  have enough time to respond during the VISA scan.
+  ([visa_manager.py](src/keithley_iv_suite/instruments/visa_manager.py))
+
+---
+
 ## [1.0.2] — 2026-04-01
 
 ### Fixed
