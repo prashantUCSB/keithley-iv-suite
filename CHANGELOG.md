@@ -9,6 +9,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.4] — 2026-04-01
+
+### Fixed
+
+- **USB instruments showing raw VISA string instead of model number** — replaced the
+  old string-based `_KEITHLEY_USB_IDS` dict (keys like `"05E6::2614"` never matched
+  `"0x05E6::0x2614"`) with integer product-ID lookup via a compiled regex. Now correctly
+  identifies 2614B, 2602, 2634B, etc. from USB resource strings even when `*IDN?`
+  is unavailable at scan time.
+  ([visa_manager.py](src/keithley_iv_suite/instruments/visa_manager.py))
+- **`_friendly_name` including full manufacturer string** — was returning
+  `"KEITHLEY INSTRUMENTS INC. MODEL 2614B"`; now extracts the model field only
+  (`"Keithley 2614B"`).
+  ([visa_manager.py](src/keithley_iv_suite/instruments/visa_manager.py))
+- **Instrument name and address text overflow** — replaced plain `QLabel` with a new
+  `ElidedLabel` subclass that overrides `paintEvent` to render text with `…` when it
+  exceeds the widget width. Both the name and address sub-labels in `InstrumentRow`
+  now use it.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+- **Address sub-label showing full VISA resource string** — replaced with a short
+  human-readable form: `GPIB · 24`, `USB · 0x2614`, `LAN · 192.168.1.10`.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+---
+
 ## [1.0.3] — 2026-04-01
 
 ### Fixed
@@ -33,6 +58,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.2] — 2026-04-01
 
 ### Fixed
+
 - **2614B `could not convert string to float` error** — `SMU2600.measure_iv()` now
   strips non-numeric tokens (status words, stray whitespace) from the TSP
   `print(smua.measure.iv())` response before parsing. Automatically falls back to
@@ -48,6 +74,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.1] — 2026-04-01
 
 ### Fixed
+
 - **F5 not launching the app from VSCode** — `PYTHONPATH` was missing from the Run
   and Debug launch configs, so Python could not find the `keithley_iv_suite` package
   under `src/`. Added `"PYTHONPATH": "${workspaceFolder}/src"` to both configs.
@@ -64,6 +91,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.0] — 2026-04-01
 
 ### Added
+
 - Initial release of Keithley IV Suite.
 - **Instrument drivers** — Keithley 2400/2401 via SCPI; 2602/2614B via TSP (Lua).
 - **VISA auto-detection** — tries NI-VISA, Keysight IO Libraries, then pyvisa-py

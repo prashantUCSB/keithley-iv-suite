@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
     QFrame, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QSizePolicy, QVBoxLayout, QWidget, QComboBox, QLineEdit,
@@ -18,6 +19,18 @@ from ...instruments.smu_base import SMUBase
 from .. import theme
 
 log = logging.getLogger(__name__)
+
+
+class ElidedLabel(QLabel):
+    """QLabel that clips overflowing text with '…' instead of wrapping or clipping hard."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        metrics = self.fontMetrics()
+        elided = metrics.elidedText(self.text(), Qt.TextElideMode.ElideRight, self.width())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(self.rect(), int(self.alignment()), elided)
+
 
 _MODEL_DRIVER = {
     "2400": ("2400", SMU2400),
@@ -78,9 +91,9 @@ class InstrumentRow(QWidget):
 
         info = QVBoxLayout()
         info.setSpacing(1)
-        self._name_lbl = QLabel(self.friendly)
+        self._name_lbl = ElidedLabel(self.friendly)
         self._name_lbl.setStyleSheet(f"font-weight: 600; color: {theme.TEXT_PRIMARY};")
-        self._addr_lbl = QLabel(self.resource_string)
+        self._addr_lbl = ElidedLabel(self._short_address(self.resource_string))
         self._addr_lbl.setStyleSheet(f"font-size: 8pt; color: {theme.TEXT_MUTED};")
         info.addWidget(self._name_lbl)
         info.addWidget(self._addr_lbl)
@@ -113,6 +126,23 @@ class InstrumentRow(QWidget):
             self.disconnect_requested.emit(self.resource_string)
         else:
             self.connect_requested.emit(self.resource_string)
+
+    @staticmethod
+    def _short_address(rstr: str) -> str:
+        """Return a short human-readable address string for the sub-label."""
+        import re
+        upper = rstr.upper()
+        if upper.startswith("GPIB"):
+            parts = rstr.split("::")
+            addr = parts[1] if len(parts) > 1 else "?"
+            return f"GPIB · {addr}"
+        if upper.startswith("USB"):
+            m = re.match(r"USB\d*::0x[0-9A-Fa-f]+::0x([0-9A-Fa-f]+)::", rstr, re.IGNORECASE)
+            return f"USB · 0x{m.group(1).upper()}" if m else "USB"
+        if upper.startswith("TCPIP"):
+            parts = rstr.split("::")
+            return f"LAN · {parts[1]}" if len(parts) > 1 else "LAN"
+        return rstr
 
 
 class InstrumentPanel(QWidget):

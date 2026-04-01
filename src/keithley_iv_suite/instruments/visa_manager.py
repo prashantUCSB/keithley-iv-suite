@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 import pyvisa
@@ -9,15 +10,26 @@ import pyvisa.errors
 
 log = logging.getLogger(__name__)
 
-# Known Keithley USB vendor/product IDs for friendly naming
-_KEITHLEY_USB_IDS: dict[str, str] = {
-    "05E6::2400": "Keithley 2400",
-    "05E6::2401": "Keithley 2401",
-    "05E6::2602": "Keithley 2602",
-    "05E6::2602A": "Keithley 2602A",
-    "05E6::2614": "Keithley 2614B",
-    "05E6::2614B": "Keithley 2614B",
+# Keithley USB vendor ID (decimal 1510 = 0x05E6)
+_KEITHLEY_VENDOR_ID = 0x05E6
+
+# USB product-ID → model string (integer keys, no string-matching ambiguity)
+_KEITHLEY_USB_PRODUCTS: dict[int, str] = {
+    0x2400: "2400",
+    0x2401: "2401",
+    0x2602: "2602",
+    0x2612: "2612B",
+    0x2614: "2614B",
+    0x2634: "2634B",
+    0x2636: "2636B",
 }
+
+# Pre-compiled pattern for USB VISA resource strings:
+# USB[board]::0x<vendor>::0x<product>::<serial>::INSTR
+_USB_RE = re.compile(
+    r"USB\d*::0x([0-9A-Fa-f]+)::0x([0-9A-Fa-f]+)::",
+    re.IGNORECASE,
+)
 
 _BACKEND_CANDIDATES = [
     "",          # default (NI-VISA or Keysight, whichever is installed)
@@ -119,22 +131,36 @@ class VISAManager:
         if upper.startswith("GPIB"):
             parts = rstr.split("::")
             addr = parts[1] if len(parts) > 1 else "?"
-            return {"resource_string": rstr, "interface": "GPIB", "address": f"GPIB::{addr}"}
+            return {"resource_string": rstr, "interface": "GPIB", "address": f"GPIB · {addr}"}
         if upper.startswith("USB"):
-            return {"resource_string": rstr, "interface": "USB", "address": rstr}
+            m = _USB_RE.match(rstr)
+            short = f"USB · 0x{m.group(2).upper()}" if m else "USB"
+            return {"resource_string": rstr, "interface": "USB", "address": short}
         if upper.startswith("TCPIP"):
             parts = rstr.split("::")
             ip = parts[1] if len(parts) > 1 else "?"
-            return {"resource_string": rstr, "interface": "Ethernet", "address": ip}
+            return {"resource_string": rstr, "interface": "Ethernet", "address": f"LAN · {ip}"}
         return {"resource_string": rstr, "interface": "Unknown", "address": rstr}
 
     @staticmethod
     def _friendly_name(rstr: str, idn: str) -> str:
+        # Prefer IDN field 2 — "MODEL 2614B" → "Keithley 2614B"
         if idn:
-            parts = idn.split(",")
+            parts = [p.strip() for p in idn.split(",")]
             if len(parts) >= 2:
-                return f"{parts[0].strip()} {parts[1].strip()}"
-        for uid, name in _KEITHLEY_USB_IDS.items():
-            if uid.replace(":", "::") in rstr or uid in rstr:
-                return name
+                model = parts[1].upper().replace("MODEL", "").strip()
+                if model:
+                    return f"Keithley {model}"
+        # Fall back to USB product-ID lookup (handles scan with no IDN)
+        m = _USB_RE.match(rstr)
+        if m:
+            try:
+                vendor  = int(m.group(1), 16)
+                product = int(m.group(2), 16)
+                if vendor == _KEITHLEY_VENDOR_ID:
+                    model_str = _KEITHLEY_USB_PRODUCTS.get(product)
+                    if model_str:
+                        return f"Keithley {model_str}"
+            except ValueError:
+                pass
         return rstr
