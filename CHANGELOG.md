@@ -9,6 +9,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.5] — 2026-04-02
+
+### Fixed
+
+- **`ValueError: could not convert string to float` in fallback path of `measure_iv()`** —
+  some 2614B firmware versions return tab-separated `current\tvoltage` even from
+  `measure.i()` (not just `measure.iv()`). The fallback path was calling `float()`
+  directly on the raw string. Extracted a `_extract_floats()` helper and made all
+  code paths parse defensively: if `measure.i()` returns two values they are used
+  directly; if it returns one the separate `measure.v()` call follows; if neither
+  yields a parseable result a clear `RuntimeError` is raised instead of a confusing
+  `ValueError`.
+  ([smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
+
+---
+
 ## [1.0.4] — 2026-04-01
 
 ### Fixed

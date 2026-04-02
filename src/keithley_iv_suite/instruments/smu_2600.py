@@ -102,32 +102,48 @@ class SMU2600(SMUBase):
         self._tsp(f"{self._smu}.output = {self._smu}.OUTPUT_OFF")
         self._output_on = False
 
+    @staticmethod
+    def _extract_floats(raw: str) -> list[float]:
+        """Return all parseable float tokens from a TSP response string."""
+        result: list[float] = []
+        for token in raw.strip().split():
+            try:
+                result.append(float(token))
+            except ValueError:
+                pass
+        return result
+
     def measure_iv(self) -> tuple[float, float]:
         """Return (current_A, voltage_V).
 
         TSP print() separates Lua multiple-return values with tabs, but
-        firmware versions vary in trailing whitespace and status tokens.
-        We parse defensively and fall back to separate i/v queries if
-        the simultaneous response cannot be cleanly split into two floats.
+        firmware versions vary — some append status tokens, others return
+        both I and V even from single-quantity calls (measure.i(), measure.v()).
+        All paths parse defensively.
         """
         raw = self._tsp_query(f"{self._smu}.measure.iv()")
-        floats: list[float] = []
-        for token in raw.strip().split():
-            try:
-                floats.append(float(token))
-            except ValueError:
-                pass  # skip non-numeric tokens (status words, stray chars)
+        floats = self._extract_floats(raw)
         if len(floats) >= 2:
             return floats[0], floats[1]
-        # Fallback: two unambiguous single-value queries
+
         log.warning(
             "measure.iv() response not parseable (%r); "
             "falling back to separate i/v queries",
             raw,
         )
-        current = float(self._tsp_query(f"{self._smu}.measure.i()"))
-        voltage = float(self._tsp_query(f"{self._smu}.measure.v()"))
-        return current, voltage
+        raw_i = self._tsp_query(f"{self._smu}.measure.i()")
+        fi = self._extract_floats(raw_i)
+        if len(fi) >= 2:
+            # Firmware returns "current\tvoltage" even from measure.i()
+            return fi[0], fi[1]
+        if len(fi) == 1:
+            raw_v = self._tsp_query(f"{self._smu}.measure.v()")
+            fv = self._extract_floats(raw_v)
+            return fi[0], fv[0] if fv else 0.0
+
+        raise RuntimeError(
+            f"Cannot parse any float from measure.i() response: {raw_i!r}"
+        )
 
     # ------------------------------------------------------------------
     # Extras
