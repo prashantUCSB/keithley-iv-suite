@@ -65,8 +65,10 @@ class SMU2600(SMUBase):
         self._tsp(f"{self._smu}.reset()")
         time.sleep(0.1)
         self._tsp(f"{self._smu}.measure.nplc = {self._nplc}")
-        # Disable autozero for speed; re-enable if accuracy is critical
-        self._tsp(f"{self._smu}.measure.autozero = {self._smu}.AUTOZERO_AUTO")
+        # Use literal 2 (AUTOZERO_AUTO) — the symbolic constant smua.AUTOZERO_AUTO
+        # is nil on some firmware builds and assigning nil to a protected TSP
+        # attribute raises "cannot modify table".
+        self._tsp(f"{self._smu}.measure.autozero = 2")
         log.debug("SMU2600 channel %s reset complete", self._channel)
 
     def configure_voltage_source(
@@ -80,9 +82,9 @@ class SMU2600(SMUBase):
         if voltage_range is not None:
             self._tsp(f"{smu}.source.rangev = {voltage_range}")
         else:
-            self._tsp(f"{smu}.source.autorangev = {smu}.AUTORANGE_ON")
+            self._tsp(f"{smu}.source.autorangev = 1")   # 1 = AUTORANGE_ON
         self._tsp(f"{smu}.source.limiti = {compliance_current}")
-        self._tsp(f"{smu}.measure.autorangei = {smu}.AUTORANGE_ON")
+        self._tsp(f"{smu}.measure.autorangei = 1")       # 1 = AUTORANGE_ON
         self._tsp(f"{smu}.source.levelv = 0")
         log.debug(
             "SMU2600 Ch%s configured: Vsource, Ilim=%.3e A",

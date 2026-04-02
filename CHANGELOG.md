@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.6] — 2026-04-02
+
+### Fixed
+
+- **TSP "cannot modify table" runtime error on instrument front panel** —
+  `smua.AUTOZERO_AUTO` and `smua.AUTORANGE_ON` symbolic constants are `nil`
+  on some 2602/2614B firmware versions. Assigning `nil` to a TSP-protected
+  attribute raises the Lua "cannot modify table" error. Replaced all three
+  occurrences with their documented integer literals: `2` (AUTOZERO\_AUTO),
+  `1` (AUTORANGE\_ON).
+  ([smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
+
+---
+
 ## [1.0.5] — 2026-04-02
 
 ### Fixed
