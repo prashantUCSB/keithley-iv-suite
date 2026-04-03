@@ -158,6 +158,12 @@ class SMU2600(SMUBase):
     def set_delay(self, delay_s: float) -> None:
         self._delay_s = delay_s
 
+    def set_sense_mode(self, remote: bool) -> None:
+        """Enable 4-wire (SENSE_REMOTE) or 2-wire (SENSE_LOCAL) sense."""
+        mode = f"{self._smu}.SENSE_REMOTE" if remote else f"{self._smu}.SENSE_LOCAL"
+        self._tsp(f"{self._smu}.sense = {mode}")
+        log.debug("SMU2600 Ch%s sense mode: %s", self._channel, "4-wire" if remote else "2-wire")
+
     @property
     def compliance_current(self) -> float:
         return self._compliance

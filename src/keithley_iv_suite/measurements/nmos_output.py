@@ -33,7 +33,7 @@ def run_output_sweep(
     drain_smu    : SMU driving/measuring drain (sweeps Vds)
     source_smu   : Optional source SMU (0 V); if None, externally grounded
     progress_cb  : Called with (step, total_steps_across_all_curves)
-    data_cb      : Called with (vds, id_A, ig_A, curve_index)
+    data_cb      : Called with (vds_forced, id_A, ig_A, vds_sensed, curve_index)
     abort_flag   : Mutable list; set abort_flag[0]=True to stop early
 
     Returns
@@ -84,9 +84,10 @@ def run_output_sweep(
             drain_smu.output_on()
             time.sleep(config.settling_delay_s * 2)
 
-            vds_data: list[float] = []
-            id_data: list[float] = []
-            ig_data: list[float] = []
+            vds_f_data: list[float] = []   # forced setpoint
+            vds_s_data: list[float] = []   # sensed readback
+            id_data:    list[float] = []
+            ig_data:    list[float] = []
 
             for vds in vds_list:
                 if abort_flag[0]:
@@ -97,13 +98,14 @@ def run_output_sweep(
                 id_meas, vds_meas = drain_smu.measure_iv()
                 ig_meas, _ = gate_smu.measure_iv()
 
-                vds_data.append(vds_meas)
+                vds_f_data.append(vds)
+                vds_s_data.append(vds_meas)
                 id_data.append(id_meas)
                 ig_data.append(ig_meas)
 
                 step += 1
                 if data_cb:
-                    data_cb(vds, id_meas, ig_meas, curve_idx)
+                    data_cb(vds, id_meas, ig_meas, vds_meas, curve_idx)
                 if progress_cb:
                     progress_cb(step, total_pts)
 
@@ -111,10 +113,11 @@ def run_output_sweep(
             drain_smu.output_off()
 
             curves.append({
-                "vgs": vgs,
-                "vds": np.array(vds_data),
-                "id": np.array(id_data),
-                "ig": np.array(ig_data),
+                "vgs":        vgs,
+                "vds_forced": np.array(vds_f_data),
+                "vds":        np.array(vds_s_data),   # sensed; backward-compat key
+                "id":         np.array(id_data),
+                "ig":         np.array(ig_data),
             })
 
     finally:

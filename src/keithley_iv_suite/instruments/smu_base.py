@@ -98,6 +98,13 @@ class SMUBase(ABC):
         """Return *IDN? string."""
         ...
 
+    def set_sense_mode(self, remote: bool) -> None:
+        """Enable (True) or disable (False) 4-wire remote sensing.
+
+        Default implementation is a no-op — subclasses override if the
+        hardware supports remote sensing.
+        """
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

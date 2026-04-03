@@ -33,7 +33,7 @@ def run_transfer_sweep(
     drain_smu    : SMU driving the drain (fixed Vds), measures Id
     source_smu   : Optional SMU for source (sets 0 V); if None, source is grounded externally
     progress_cb  : Called with (step, total) after each point
-    data_cb      : Called with (vgs, id_A, ig_A) after each point
+    data_cb      : Called with (vgs_forced, id_A, ig_A, vgs_sensed) after each point
     abort_flag   : Mutable list; set abort_flag[0]=True to stop early
 
     Returns
@@ -70,10 +70,11 @@ def run_transfer_sweep(
     gate_smu.output_on()
     time.sleep(config.settling_delay_s * 2)
 
-    vgs_data: list[float] = []
-    id_data: list[float] = []
-    ig_data: list[float] = []
-    vds_data: list[float] = []
+    vgs_data:    list[float] = []
+    vgs_s_data:  list[float] = []   # sensed gate voltage
+    id_data:     list[float] = []
+    ig_data:     list[float] = []
+    vds_data:    list[float] = []
 
     log.info(
         "Transfer sweep: Vgs %.2f→%.2f V (%d pts), Vds=%.3f V",
@@ -91,16 +92,17 @@ def run_transfer_sweep(
 
             # Measure drain (Id and actual Vds)
             id_meas, vds_meas = drain_smu.measure_iv()
-            # Measure gate leakage (Ig)
-            ig_meas, _ = gate_smu.measure_iv()
+            # Measure gate (Ig and sensed Vgs)
+            ig_meas, vgs_sensed = gate_smu.measure_iv()
 
             vgs_data.append(vgs)
+            vgs_s_data.append(vgs_sensed)
             id_data.append(id_meas)
             ig_data.append(ig_meas)
             vds_data.append(vds_meas)
 
             if data_cb:
-                data_cb(vgs, id_meas, ig_meas)
+                data_cb(vgs, id_meas, ig_meas, vgs_sensed)
             if progress_cb:
                 progress_cb(i + 1, n_pts)
 
@@ -111,9 +113,10 @@ def run_transfer_sweep(
             source_smu.output_off()
 
     return {
-        "vgs": np.array(vgs_data),
-        "id": np.array(id_data),
-        "ig": np.array(ig_data),
+        "vgs":        np.array(vgs_data),
+        "vgs_sensed": np.array(vgs_s_data),
+        "id":         np.array(id_data),
+        "ig":         np.array(ig_data),
         "vds_actual": np.array(vds_data),
-        "config": config,
+        "config":     config,
     }

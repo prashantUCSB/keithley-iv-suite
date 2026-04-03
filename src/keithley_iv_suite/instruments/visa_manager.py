@@ -82,24 +82,47 @@ class VISAManager:
             return []
 
     def list_resources_with_info(self) -> list[dict]:
-        """Return resources with parsed metadata (type, address, friendly name)."""
+        """Return only physically reachable resources with IDN metadata.
+
+        Resources that cannot be opened OR return an empty *IDN? response are
+        silently dropped from auto-scan results — they are phantom VISA entries
+        (stale NI-MAX aliases, virtual COM ports, USBTMC artefacts, etc.).
+        The user can still add them manually via the Manual Entry box.
+        """
         results: list[dict] = []
         for rstr in self.list_resources():
             info = self._parse_resource_string(rstr)
             try:
                 res = self._rm.open_resource(rstr, open_timeout=2000)  # type: ignore[union-attr]
-                res.timeout = 2000  # 2 s — 2600-series can be slow to respond
+                res.timeout = 2000
                 try:
                     idn = res.query("*IDN?").strip()
                 except Exception:
                     idn = ""
                 finally:
-                    res.close()
-                info["idn"] = idn
-                info["friendly"] = self._friendly_name(rstr, idn)
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
             except Exception:
-                info["idn"] = ""
-                info["friendly"] = info.get("address", rstr)
+                # Cannot open — phantom entry; skip entirely
+                log.debug("Skipping unreachable resource: %s", rstr)
+                continue
+
+            if not idn:
+                # Opened but silent — skip; user can add manually if needed
+                log.debug("Skipping resource with no IDN response: %s", rstr)
+                continue
+
+            info["idn"] = idn
+            info["friendly"] = self._friendly_name(rstr, idn)
+            # Flag whether this looks like a Keithley SMU
+            info["is_smu"] = any(
+                k in idn.upper() for k in ("2400", "2401", "2410", "2420",
+                                            "2450", "2460", "2470", "2601",
+                                            "2602", "2604", "2611", "2612",
+                                            "2614", "2634", "2636", "6430")
+            )
             results.append(info)
         return results
 

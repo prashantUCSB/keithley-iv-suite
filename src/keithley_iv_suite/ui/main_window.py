@@ -287,8 +287,8 @@ class MainWindow(QMainWindow):
     # Worker signals
     # ------------------------------------------------------------------
 
-    def _on_data_point(self, x: float, y: float, curve_id: int):
-        self._plot_panel.append_point(x, y, curve_id)
+    def _on_data_point(self, v_forced: float, i_meas: float, v_sensed: float, curve_id: int):
+        self._plot_panel.append_point(v_forced, i_meas, v_sensed, curve_id)
 
     def _on_progress(self, step: int, total: int):
         self._status_progress.setRange(0, total)
@@ -316,18 +316,17 @@ class MainWindow(QMainWindow):
 
     def _on_params_updated(self, params: dict):
         """Show extracted parameters in the status bar."""
+        from .panels.plot_panel import _fmt_si
         parts = []
         if "R" in params:
-            from .panels.plot_panel import _fmt_si
             parts.append(f"R = {_fmt_si(params['R'], 'Ω')}")
             parts.append(f"R² = {params['R_sq']:.6f}")
         if "gm_pk" in params:
-            from .panels.plot_panel import _fmt_si
             parts.append(f"gm_pk = {_fmt_si(params['gm_pk'], 'S')}")
-        if "Vth" in params and not (isinstance(params["Vth"], float) and params["Vth"] != params["Vth"]):
+        if "Vth" in params and not (isinstance(params["Vth"], float)
+                                    and params["Vth"] != params["Vth"]):
             parts.append(f"Vth = {params['Vth']:.3f} V")
         if "gd_max" in params:
-            from .panels.plot_panel import _fmt_si
             parts.append(f"gd_max = {_fmt_si(params['gd_max'], 'S')}")
         if parts:
             self._set_status("  |  ".join(parts), color=theme.AMBER)

@@ -1,4 +1,4 @@
-"""Left panel — instrument connection and status."""
+"""Left panel — instrument connection, status, and sense-mode control."""
 from __future__ import annotations
 
 import logging
@@ -7,8 +7,8 @@ from typing import Optional
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
-    QFrame, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QSizePolicy, QVBoxLayout, QWidget, QComboBox, QLineEdit,
+    QFrame, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QSizePolicy, QVBoxLayout, QWidget, QComboBox, QLineEdit,
     QFormLayout,
 )
 
@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 
 class ElidedLabel(QLabel):
-    """QLabel that clips overflowing text with '…' instead of wrapping or clipping hard."""
+    """QLabel that clips overflowing text with '…' instead of wrapping."""
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -33,24 +33,16 @@ class ElidedLabel(QLabel):
 
 
 _MODEL_DRIVER = {
-    "2400": ("2400", SMU2400),
-    "2401": ("2401", SMU2400),
-    "2602": ("2602", lambda r: SMU2600(r, "A")),
+    "2400":  ("2400",  SMU2400),
+    "2401":  ("2401",  SMU2400),
+    "2602":  ("2602",  lambda r: SMU2600(r, "A")),
     "2602A": ("2602A", lambda r: SMU2600(r, "A")),
     "2614B": ("2614B", lambda r: SMU2600(r, "A")),
-    "2614": ("2614B", lambda r: SMU2600(r, "A")),
-}
-
-_STATUS_COLORS = {
-    "connected":    theme.SUCCESS,
-    "disconnected": theme.TEXT_MUTED,
-    "error":        theme.ERROR,
-    "scanning":     theme.AMBER,
+    "2614":  ("2614B", lambda r: SMU2600(r, "A")),
 }
 
 
 class _ScanWorker(QThread):
-    """Background VISA scan thread."""
     done = pyqtSignal(list)
 
     def __init__(self, vm: VISAManager):
@@ -67,22 +59,27 @@ class _ScanWorker(QThread):
 
 
 class InstrumentRow(QWidget):
-    """One row in the instrument panel — shows status dot, name, address, connect button."""
+    """One instrument row — status dot, name, address, sense toggle, connect button."""
 
-    connect_requested    = pyqtSignal(str)   # resource_string
-    disconnect_requested = pyqtSignal(str)
+    connect_requested      = pyqtSignal(str)   # resource_string
+    disconnect_requested   = pyqtSignal(str)
+    sense_mode_changed     = pyqtSignal(str, bool)  # resource_string, remote
 
-    def __init__(self, resource_string: str, friendly: str, parent=None):
+    def __init__(self, resource_string: str, friendly: str,
+                 is_smu: bool = True, idn: str = "", parent=None):
         super().__init__(parent)
         self.resource_string = resource_string
         self.friendly = friendly
+        self.is_smu = is_smu
+        self.idn = idn
         self._connected = False
+        self._remote_sense = False
         self._build_ui()
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 3, 6, 3)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self._dot = QLabel("●")
         self._dot.setFixedWidth(14)
@@ -92,34 +89,58 @@ class InstrumentRow(QWidget):
         info = QVBoxLayout()
         info.setSpacing(1)
         self._name_lbl = ElidedLabel(self.friendly)
-        self._name_lbl.setStyleSheet(f"font-weight: 600; color: {theme.TEXT_PRIMARY};")
-        self._addr_lbl = ElidedLabel(self._short_address(self.resource_string))
-        self._addr_lbl.setStyleSheet(f"font-size: 8pt; color: {theme.TEXT_MUTED};")
+        self._name_lbl.setStyleSheet(f"font-weight:600; color:{theme.TEXT_PRIMARY};")
+        # Show IDN substring for non-SMU devices so the user knows what it is
+        addr_text = self._short_address(self.resource_string)
+        if not self.is_smu and self.idn:
+            addr_text = self.idn[:40]
+        self._addr_lbl = ElidedLabel(addr_text)
+        self._addr_lbl.setStyleSheet(f"font-size:8pt; color:{theme.TEXT_MUTED};")
         info.addWidget(self._name_lbl)
         info.addWidget(self._addr_lbl)
         layout.addLayout(info, stretch=1)
 
-        self._btn = QPushButton("Connect")
+        # 2W/4W sense toggle — only meaningful for SMUs
+        if self.is_smu:
+            self._sense_btn = QPushButton("2W")
+            self._sense_btn.setFixedWidth(36)
+            self._sense_btn.setToolTip("Toggle 2-wire / 4-wire remote sense")
+            self._sense_btn.setStyleSheet(
+                f"font-size:8pt; font-weight:700; color:{theme.TEXT_MUTED};"
+            )
+            self._sense_btn.clicked.connect(self._toggle_sense)
+            layout.addWidget(self._sense_btn)
+        else:
+            self._sense_btn = None
+
+        self._btn = QPushButton("Connect" if self.is_smu else "—")
         self._btn.setMinimumWidth(90)
         self._btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self._btn.clicked.connect(self._on_button)
+        if self.is_smu:
+            self._btn.clicked.connect(self._on_button)
+        else:
+            self._btn.setEnabled(False)
+            self._btn.setStyleSheet(f"color:{theme.TEXT_MUTED};")
         layout.addWidget(self._btn)
 
     def set_connected(self, ok: bool):
         self._connected = ok
         self._set_dot_color(theme.SUCCESS if ok else theme.TEXT_MUTED)
         self._btn.setText("Disconnect" if ok else "Connect")
+        if self._sense_btn:
+            self._sense_btn.setEnabled(ok)
+            self._sense_btn.setStyleSheet(
+                f"font-size:8pt; font-weight:700;"
+                f" color:{'#00BFFF' if (ok and self._remote_sense) else theme.TEXT_MUTED};"
+            )
 
     def set_error(self):
         self._set_dot_color(theme.ERROR)
         self._btn.setText("Retry")
         self._connected = False
 
-    def set_scanning(self):
-        self._set_dot_color(theme.AMBER)
-
     def _set_dot_color(self, color: str):
-        self._dot.setStyleSheet(f"color: {color}; font-size: 14pt;")
+        self._dot.setStyleSheet(f"color:{color}; font-size:14pt;")
 
     def _on_button(self):
         if self._connected:
@@ -127,15 +148,27 @@ class InstrumentRow(QWidget):
         else:
             self.connect_requested.emit(self.resource_string)
 
+    def _toggle_sense(self):
+        self._remote_sense = not self._remote_sense
+        label = "4W" if self._remote_sense else "2W"
+        color = "#00BFFF" if self._remote_sense else theme.TEXT_MUTED
+        self._sense_btn.setText(label)
+        self._sense_btn.setStyleSheet(
+            f"font-size:8pt; font-weight:700; color:{color};"
+        )
+        self.sense_mode_changed.emit(self.resource_string, self._remote_sense)
+
+    @property
+    def remote_sense(self) -> bool:
+        return self._remote_sense
+
     @staticmethod
     def _short_address(rstr: str) -> str:
-        """Return a short human-readable address string for the sub-label."""
         import re
         upper = rstr.upper()
         if upper.startswith("GPIB"):
             parts = rstr.split("::")
-            addr = parts[1] if len(parts) > 1 else "?"
-            return f"GPIB · {addr}"
+            return f"GPIB · {parts[1] if len(parts) > 1 else '?'}"
         if upper.startswith("USB"):
             m = re.match(r"USB\d*::0x[0-9A-Fa-f]+::0x([0-9A-Fa-f]+)::", rstr, re.IGNORECASE)
             return f"USB · 0x{m.group(1).upper()}" if m else "USB"
@@ -147,12 +180,11 @@ class InstrumentRow(QWidget):
 
 class InstrumentPanel(QWidget):
     """
-    Left panel: VISA scan, per-instrument connect/disconnect, status display.
+    Left panel: VISA scan, per-instrument connect/disconnect, 2W/4W toggle.
 
     Signals
     -------
-    instruments_changed(smu_map)   — emitted whenever connected set changes.
-                                     smu_map: dict[instrument_id -> SMUBase]
+    instruments_changed(smu_map)  — emitted whenever connected set changes.
     """
 
     instruments_changed = pyqtSignal(dict)
@@ -160,16 +192,16 @@ class InstrumentPanel(QWidget):
     def __init__(self, visa_manager: VISAManager, parent=None):
         super().__init__(parent)
         self._vm = visa_manager
-        self._rows: dict[str, InstrumentRow] = {}       # resource_string -> row
-        self._smu_map: dict[str, SMUBase] = {}          # instrument_id  -> driver
-        self._resources: dict[str, dict] = {}           # resource_string -> info dict
+        self._rows: dict[str, InstrumentRow] = {}
+        self._smu_map: dict[str, SMUBase] = {}
+        self._resources: dict[str, dict] = {}
         self._scan_worker: Optional[_ScanWorker] = None
         self._build_ui()
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setFixedWidth(280)
+        self.setFixedWidth(300)
 
     # ------------------------------------------------------------------
-    # UI Construction
+    # UI
     # ------------------------------------------------------------------
 
     def _build_ui(self):
@@ -177,12 +209,10 @@ class InstrumentPanel(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        # Title
         title = QLabel("INSTRUMENTS")
         title.setProperty("role", "section")
         root.addWidget(title)
 
-        # Scan button
         self._scan_btn = QPushButton("⟳  Scan VISA")
         self._scan_btn.setProperty("role", "primary")
         self._scan_btn.clicked.connect(self._on_scan)
@@ -193,11 +223,11 @@ class InstrumentPanel(QWidget):
         manual_layout = QFormLayout(manual_box)
         manual_layout.setSpacing(4)
         self._manual_addr = QLineEdit()
-        self._manual_addr.setPlaceholderText("GPIB0::24::INSTR or USB0::...")
+        self._manual_addr.setPlaceholderText("GPIB0::24::INSTR  or  USB0::...")
         self._manual_model = QComboBox()
         self._manual_model.addItems(["2400", "2401", "2602", "2602A", "2614B"])
         self._manual_id = QLineEdit()
-        self._manual_id.setPlaceholderText("My label (optional)")
+        self._manual_id.setPlaceholderText("Label (optional)")
         manual_layout.addRow("Address:", self._manual_addr)
         manual_layout.addRow("Model:", self._manual_model)
         manual_layout.addRow("Label:", self._manual_id)
@@ -206,17 +236,14 @@ class InstrumentPanel(QWidget):
         manual_layout.addRow("", add_btn)
         root.addWidget(manual_box)
 
-        # Connect all
         self._conn_all_btn = QPushButton("Connect All")
         self._conn_all_btn.clicked.connect(self._connect_all)
         root.addWidget(self._conn_all_btn)
 
-        # Separator
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(line)
 
-        # Instrument list
         self._list_box = QGroupBox("Discovered / Added")
         list_layout = QVBoxLayout(self._list_box)
         list_layout.setContentsMargins(4, 4, 4, 4)
@@ -226,7 +253,6 @@ class InstrumentPanel(QWidget):
         list_layout.addLayout(self._scroll_content)
         root.addWidget(self._list_box, stretch=1)
 
-        # Status label
         self._status_lbl = QLabel("No instruments found. Click 'Scan VISA'.")
         self._status_lbl.setProperty("role", "muted")
         self._status_lbl.setWordWrap(True)
@@ -247,15 +273,26 @@ class InstrumentPanel(QWidget):
     def _on_scan_done(self, results: list):
         self._scan_btn.setEnabled(True)
         self._scan_btn.setText("⟳  Scan VISA")
+        new_count = 0
         for info in results:
             rstr = info["resource_string"]
             if rstr not in self._rows:
                 self._resources[rstr] = info
-                self._add_row(rstr, info.get("friendly", rstr))
-        count = len(self._rows)
-        self._status_lbl.setText(
-            f"{count} instrument(s) found." if count else "No VISA instruments found."
-        )
+                self._add_row(
+                    rstr,
+                    info.get("friendly", rstr),
+                    is_smu=info.get("is_smu", True),
+                    idn=info.get("idn", ""),
+                )
+                new_count += 1
+        total = len(self._rows)
+        if total == 0:
+            self._status_lbl.setText("No VISA instruments found.")
+        else:
+            self._status_lbl.setText(
+                f"{total} instrument(s) found"
+                + (f" ({new_count} new)." if new_count else " (already listed).")
+            )
 
     def _on_manual_add(self):
         rstr = self._manual_addr.text().strip()
@@ -264,29 +301,29 @@ class InstrumentPanel(QWidget):
         model = self._manual_model.currentText()
         label = self._manual_id.text().strip() or f"Keithley {model}"
         info = {
-            "resource_string": rstr,
-            "interface": "Manual",
-            "address": rstr,
-            "friendly": label,
-            "idn": "",
-            "model_hint": model,
+            "resource_string": rstr, "interface": "Manual",
+            "address": rstr, "friendly": label,
+            "idn": "", "model_hint": model, "is_smu": True,
         }
         self._resources[rstr] = info
         if rstr not in self._rows:
-            self._add_row(rstr, label)
+            self._add_row(rstr, label, is_smu=True, idn="")
         self._manual_addr.clear()
         self._manual_id.clear()
 
-    def _add_row(self, resource_string: str, friendly: str):
-        row = InstrumentRow(resource_string, friendly)
+    def _add_row(self, resource_string: str, friendly: str,
+                 is_smu: bool = True, idn: str = ""):
+        row = InstrumentRow(resource_string, friendly, is_smu=is_smu, idn=idn)
         row.connect_requested.connect(self._connect_instrument)
         row.disconnect_requested.connect(self._disconnect_instrument)
+        row.sense_mode_changed.connect(self._on_sense_mode_changed)
         self._rows[resource_string] = row
         self._scroll_content.addWidget(row)
 
     def _connect_all(self):
-        for rstr in list(self._rows.keys()):
-            self._connect_instrument(rstr)
+        for rstr, row in self._rows.items():
+            if row.is_smu:
+                self._connect_instrument(rstr)
 
     # ------------------------------------------------------------------
     # Connect / Disconnect
@@ -294,36 +331,33 @@ class InstrumentPanel(QWidget):
 
     def _connect_instrument(self, resource_string: str):
         row = self._rows.get(resource_string)
-        if not row:
+        if not row or not row.is_smu:
             return
         info = self._resources.get(resource_string, {})
-        # model_hint is only trusted when set explicitly via Manual Entry.
-        # For scan-discovered instruments it is absent — we always re-query
-        # *IDN? after opening to get the ground truth.
         manual_model_hint = info.get("model_hint", "")
 
         try:
             res = self._vm.open_resource(resource_string)
-
-            # Query real IDN before creating any typed driver.
-            # This is the authoritative source for model detection.
             try:
                 real_idn = res.query("*IDN?").strip()
             except Exception:
                 real_idn = ""
-            log.debug("IDN response for %s: %r", resource_string, real_idn)
+            log.debug("IDN for %s: %r", resource_string, real_idn)
 
-            # Manual hint takes priority; fall back to IDN parse; last resort "2400"
             model_hint = manual_model_hint or self._guess_model(real_idn)
-
             driver = self._make_driver(res, model_hint, resource_string)
             driver.reset()
+
+            # Apply current sense mode
+            if row.remote_sense:
+                driver.set_sense_mode(True)
+
             instr_id = self._label_for(resource_string, model_hint, real_idn)
             self._smu_map[instr_id] = driver
             row.set_connected(True)
             row.friendly = instr_id
             row._name_lbl.setText(instr_id)
-            log.info("Connected: %s  IDN=%r  (%s)", instr_id, real_idn, resource_string)
+            log.info("Connected: %s  IDN=%r", instr_id, real_idn)
             self._status_lbl.setText(f"Connected: {instr_id}")
         except Exception as exc:
             row.set_error()
@@ -335,9 +369,9 @@ class InstrumentPanel(QWidget):
 
     def _disconnect_instrument(self, resource_string: str):
         row = self._rows.get(resource_string)
-        # Find instrument by resource string
         to_remove = [k for k, v in self._smu_map.items()
-                     if hasattr(v, "_resource") and str(v._resource.resource_name) == resource_string]
+                     if hasattr(v, "_resource")
+                     and str(v._resource.resource_name) == resource_string]
         for k in to_remove:
             try:
                 self._smu_map[k].disconnect()
@@ -347,6 +381,21 @@ class InstrumentPanel(QWidget):
         if row:
             row.set_connected(False)
         self.instruments_changed.emit(dict(self._smu_map))
+
+    def _on_sense_mode_changed(self, resource_string: str, remote: bool):
+        """Apply sense mode change to already-connected SMU immediately."""
+        for smu in self._smu_map.values():
+            if (hasattr(smu, "_resource")
+                    and str(smu._resource.resource_name) == resource_string):
+                try:
+                    smu.set_sense_mode(remote)
+                    log.info(
+                        "%s sense mode → %s",
+                        resource_string, "4-wire" if remote else "2-wire",
+                    )
+                except Exception as exc:
+                    log.warning("set_sense_mode failed: %s", exc)
+                break
 
     # ------------------------------------------------------------------
     # Helpers
@@ -363,20 +412,14 @@ class InstrumentPanel(QWidget):
     def _make_driver(resource, model_hint: str, resource_string: str) -> SMUBase:
         m = model_hint.upper()
         if "2614" in m or "2602" in m:
-            # Default channel A; user can add channel B separately
-            channel = "A"
-            return SMU2600(resource, channel=channel)
+            return SMU2600(resource, channel="A")
         return SMU2400(resource)
 
     @staticmethod
     def _label_for(resource_string: str, model_hint: str, idn: str) -> str:
-        # Prefer the real IDN — it is always more accurate than a guessed hint.
-        # Keithley IDN format: "KEITHLEY INSTRUMENTS INC.,MODEL 2614B,SN,FW"
-        # or:                  "Keithley Instruments Inc., Model 2614B, SN, FW"
         if idn:
             parts = [p.strip() for p in idn.split(",")]
             if len(parts) >= 2:
-                # parts[1] is e.g. "MODEL 2614B" or "Model 2400"
                 model_field = parts[1].upper().replace("MODEL", "").strip()
                 if model_field:
                     return f"Keithley {model_field}"

@@ -9,6 +9,74 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] — 2026-04-03
+
+### Added
+
+- **Forced / Sensed V / Readback toggle** — three-button row above the plot
+  switches the X-axis between commanded setpoint (Forced V), SMU voltage
+  readback (Sensed V), and full readback (Readback). All three data sets are
+  stored per point; switching is instant.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Style toolbar** — always-visible panel below the plot; click any curve to
+  select it, then adjust Color (QColorDialog), Line style (Solid/Dash/Dot/
+  DashDot/None), Marker shape (Circle/Square/Triangle/Star/Diamond/None), and
+  Marker size (1–20 px). Changes apply only to the selected curve.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Draggable annotations** — equation/gm/residual `TextItem` overlays on the
+  plot can be click-dragged anywhere on the canvas via `ItemIsMovable` flag.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Equation text box** — `y = mx + b` fit equation displayed in a
+  non-clipping `QLabel` below the plot (selectable text, dark background,
+  amber color); also shown as a draggable overlay on the Linear tab.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **2W / 4W sense mode toggle** — per-instrument row button in the Instrument
+  Panel; clicking toggles 2-wire (local) / 4-wire (remote Kelvin) sense.
+  If the instrument is already connected, `set_sense_mode()` is called
+  immediately. Button turns blue when 4-wire is active.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+- **`set_sense_mode(remote)`** on SMU2400 (`:SYST:RSEN ON/OFF`) and SMU2600
+  (`smua.sense = SENSE_REMOTE/LOCAL`); no-op default in SMUBase.
+  ([smu_base.py](src/keithley_iv_suite/instruments/smu_base.py),
+  [smu_2400.py](src/keithley_iv_suite/instruments/smu_2400.py),
+  [smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
+
+- **V_sensed column in CSV** — all exports now include both V_forced
+  (commanded setpoint) and V_sensed (SMU readback), plus a header comment
+  explaining the difference. Transfer: `Vgs_forced, Vgs_sensed, Id, Ig,
+  Vds_sensed`. Output per curve: `Vds_forced, Vds_sensed, Id, Ig`. Resistor:
+  `V_forced, V_sensed, I, R`.
+  ([exporter.py](src/keithley_iv_suite/data/exporter.py),
+  [nmos_transfer.py](src/keithley_iv_suite/measurements/nmos_transfer.py),
+  [nmos_output.py](src/keithley_iv_suite/measurements/nmos_output.py),
+  [resistor_iv.py](src/keithley_iv_suite/measurements/resistor_iv.py))
+
+### Fixed
+
+- **VISA scan showing phantom instruments** — `list_resources_with_info()`
+  now skips any resource that fails to open OR returns an empty `*IDN?`
+  response. Non-SMU instruments (printers, DAQ cards) are shown with their
+  full IDN string for identification but cannot be connected as SMUs.
+  ([visa_manager.py](src/keithley_iv_suite/instruments/visa_manager.py),
+  [instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+- **`data_point` signal arity mismatch** — signal changed from `(float, float,
+  int)` to `(float, float, float, int)` carrying `(v_forced, i_meas, v_sensed,
+  curve_id)`; `_on_data_point` and `append_point` updated accordingly.
+  ([measurement_worker.py](src/keithley_iv_suite/ui/workers/measurement_worker.py),
+  [main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+- **`_on_params_updated` triple inline import** — consolidated to single
+  import at call site.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+---
+
 ## [1.0.9] — 2026-04-03
 
 ### Added

@@ -8,11 +8,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from ...instruments.smu_base import SMUBase
 from ...measurements.sweep_config import (
-    MeasurementType,
-    OutputConfig,
-    ResistorConfig,
-    SweepConfig,
-    TransferConfig,
+    MeasurementType, OutputConfig, ResistorConfig, SweepConfig, TransferConfig,
 )
 from ...measurements.nmos_transfer import run_transfer_sweep
 from ...measurements.nmos_output import run_output_sweep
@@ -27,15 +23,20 @@ class MeasurementWorker(QThread):
 
     Signals
     -------
-    progress(step, total)      — emitted after each data point
-    data_point(x, y, curve_id) — (Vgs/Vds/V, Id/I, curve index)
-    finished(result_dict)      — emitted on successful completion
-    error(message)             — emitted on exception
-    aborted()                  — emitted when manually stopped
+    progress(step, total)
+    data_point(v_forced, i_meas, v_sensed, curve_id)
+        v_forced  — commanded setpoint (V)
+        i_meas    — measured current (A)
+        v_sensed  — voltage read back by the SMU (V); equals v_forced in
+                    2-wire mode, differs in 4-wire (Kelvin) mode
+        curve_id  — index into the family (0 for single-curve measurements)
+    finished(result_dict)
+    error(message)
+    aborted()
     """
 
     progress   = pyqtSignal(int, int)
-    data_point = pyqtSignal(float, float, int)   # x, y, curve_id
+    data_point = pyqtSignal(float, float, float, int)   # v_forced, i, v_sensed, curve_id
     finished   = pyqtSignal(dict)
     error      = pyqtSignal(str)
     aborted    = pyqtSignal()
@@ -43,7 +44,7 @@ class MeasurementWorker(QThread):
     def __init__(
         self,
         config: SweepConfig,
-        smu_map: dict[str, SMUBase],      # instrument_id -> SMUBase instance
+        smu_map: dict[str, SMUBase],
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -51,17 +52,8 @@ class MeasurementWorker(QThread):
         self._smu_map = smu_map
         self._abort_flag: list[bool] = [False]
 
-    # ------------------------------------------------------------------
-    # Public
-    # ------------------------------------------------------------------
-
     def stop(self) -> None:
-        """Request graceful abort (outputs will be turned off)."""
         self._abort_flag[0] = True
-
-    # ------------------------------------------------------------------
-    # QThread.run
-    # ------------------------------------------------------------------
 
     def run(self) -> None:
         try:
@@ -73,10 +65,6 @@ class MeasurementWorker(QThread):
         except Exception as exc:
             log.exception("Measurement worker error")
             self.error.emit(str(exc))
-
-    # ------------------------------------------------------------------
-    # Internal dispatch
-    # ------------------------------------------------------------------
 
     def _dispatch(self) -> dict:
         cfg = self._config
@@ -93,7 +81,7 @@ class MeasurementWorker(QThread):
                 drain_smu=drain_smu,
                 source_smu=src_smu,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
-                data_cb=lambda vgs, id_, ig: self.data_point.emit(vgs, id_, 0),
+                data_cb=lambda vf, i, ig, vs: self.data_point.emit(vf, i, vs, 0),
                 abort_flag=self._abort_flag,
             )
 
@@ -108,7 +96,7 @@ class MeasurementWorker(QThread):
                 drain_smu=drain_smu,
                 source_smu=src_smu,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
-                data_cb=lambda vds, id_, ig, ci: self.data_point.emit(vds, id_, ci),
+                data_cb=lambda vf, i, ig, vs, ci: self.data_point.emit(vf, i, vs, ci),
                 abort_flag=self._abort_flag,
             )
 
@@ -119,7 +107,7 @@ class MeasurementWorker(QThread):
                 config=cfg,
                 smu=smu,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
-                data_cb=lambda v, i: self.data_point.emit(v, i, 0),
+                data_cb=lambda vf, i, vs: self.data_point.emit(vf, i, vs, 0),
                 abort_flag=self._abort_flag,
             )
 
@@ -128,9 +116,9 @@ class MeasurementWorker(QThread):
     def _resolve(self, role_key: str, cfg: SweepConfig) -> SMUBase:
         from ...measurements.sweep_config import TerminalRole
         role_map = {
-            "gate": TerminalRole.GATE,
-            "drain": TerminalRole.DRAIN,
-            "source": TerminalRole.SOURCE,
+            "gate":       TerminalRole.GATE,
+            "drain":      TerminalRole.DRAIN,
+            "source":     TerminalRole.SOURCE,
             "terminal_1": TerminalRole.TERMINAL_1,
             "terminal_2": TerminalRole.TERMINAL_2,
         }
@@ -141,21 +129,18 @@ class MeasurementWorker(QThread):
         key = assignment.instrument_id
         if key not in self._smu_map:
             raise ValueError(
-                f"Instrument '{key}' assigned to {role_key} is not in the connected SMU map. "
+                f"Instrument '{key}' assigned to {role_key} is not connected. "
                 f"Available: {list(self._smu_map.keys())}"
             )
         return self._smu_map[key]
 
     def _resolve_optional(self, role_key: str, cfg: SweepConfig) -> Optional[SMUBase]:
         from ...measurements.sweep_config import TerminalRole
-        role_map = {
-            "source": TerminalRole.SOURCE,
-        }
+        role_map = {"source": TerminalRole.SOURCE}
         role = role_map.get(role_key)
         if role is None:
             return None
         assignment = cfg.get_assignment(role)
         if assignment is None or assignment.grounded:
-            return None   # externally grounded — no SMU needed
-        key = assignment.instrument_id
-        return self._smu_map.get(key)
+            return None
+        return self._smu_map.get(assignment.instrument_id)

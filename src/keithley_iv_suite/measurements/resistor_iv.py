@@ -31,7 +31,7 @@ def run_resistor_sweep(
     config       : ResistorConfig
     smu          : SMU driving terminal 1 (terminal 2 grounded externally or inside the SMU)
     progress_cb  : Called with (step, total)
-    data_cb      : Called with (voltage_V, current_A) after each point
+    data_cb      : Called with (v_forced, current_A, v_sensed) after each point
     abort_flag   : Mutable list; set abort_flag[0]=True to stop early
 
     Returns
@@ -50,9 +50,10 @@ def run_resistor_sweep(
     smu.output_on()
     time.sleep(config.settling_delay_s * 2)
 
-    v_data: list[float] = []
-    i_data: list[float] = []
-    r_data: list[float] = []
+    v_f_data: list[float] = []   # forced setpoint
+    v_s_data: list[float] = []   # sensed readback
+    i_data:   list[float] = []
+    r_data:   list[float] = []
 
     log.info(
         "Resistor sweep: V %.3f→%.3f V (%d pts), Ilim=%.3e A",
@@ -71,12 +72,13 @@ def run_resistor_sweep(
             current, v_meas = smu.measure_iv()
             resistance = v_meas / (current + _EPSILON) if abs(current) > 1e-14 else float("inf")
 
-            v_data.append(v_meas)
+            v_f_data.append(voltage)
+            v_s_data.append(v_meas)
             i_data.append(current)
             r_data.append(resistance)
 
             if data_cb:
-                data_cb(v_meas, current)
+                data_cb(voltage, current, v_meas)
             if progress_cb:
                 progress_cb(idx + 1, n_pts)
 
@@ -85,8 +87,9 @@ def run_resistor_sweep(
         smu.output_off()
 
     return {
-        "voltage": np.array(v_data),
-        "current": np.array(i_data),
-        "resistance": np.array(r_data),
-        "config": config,
+        "voltage":         np.array(v_f_data),
+        "voltage_sensed":  np.array(v_s_data),
+        "current":         np.array(i_data),
+        "resistance":      np.array(r_data),
+        "config":          config,
     }
