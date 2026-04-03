@@ -9,6 +9,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.9] — 2026-04-03
+
+### Added
+
+- **3-tab plot panel** — replaced the single plot widget with a `QTabWidget`
+  containing three tabs populated at sweep completion:
+  - **Linear** — live linear-scale plot with fit/marker overlay
+  - **Log Scale** — log-Y plot of |Id| or |I|
+  - **Analysis** (label varies by measurement type):
+    - *Resistor IV* → "Residuals": measured − fit scatter + σ annotation
+    - *nMOS Transfer* → "gm": transconductance vs Vgs
+    - *nMOS Output* → "gd": output conductance vs Vds per curve
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Resistor best-fit line** — unconstrained linear fit `I = m·V + b`
+  computed at sweep end; dashed amber overlay extrapolated ±20% beyond
+  data; equation and R² annotated on the plot; R, R², and σ(residual)
+  shown in the params label and status bar.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **nMOS Transfer post-sweep analysis** — gm peak, Vgs at gm peak, and
+  Vth (via √Id linear extrapolation near gm peak) computed at sweep end;
+  Vth shown as a dashed vertical marker on both Linear and Log tabs.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **nMOS Output post-sweep analysis** — gd (dId/dVds) computed per curve
+  at sweep end; all curves shown in Analysis tab.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Export PNG** — "Export PNG" button exports the currently visible tab
+  as a PNG image via `pyqtgraph.exporters.ImageExporter`; also available
+  via View → Export Plot as PNG (Ctrl+P).
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py),
+  [main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+- **Extracted params in status bar** — `params_updated` signal wired to
+  `MainWindow._on_params_updated`; R / gm / Vth / gd appear in the
+  status bar in amber after each sweep.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+---
+
 ## [1.0.8] — 2026-04-02
 
 ### Changed

@@ -95,6 +95,7 @@ class MainWindow(QMainWindow):
 
         self._plot_panel = PlotPanel()
         self._plot_panel.export_requested.connect(self._export_last_result)
+        self._plot_panel.params_updated.connect(self._on_params_updated)
         v_splitter.addWidget(self._plot_panel)
 
         v_splitter.setSizes([380, 440])
@@ -204,6 +205,11 @@ class MainWindow(QMainWindow):
         act_autoscale.triggered.connect(self._plot_panel._plot_widget.autoRange)
         view_menu.addAction(act_autoscale)
 
+        act_export_png = QAction("Export Plot as PNG…", self)
+        act_export_png.setShortcut(QKeySequence("Ctrl+P"))
+        act_export_png.triggered.connect(self._plot_panel._export_png)
+        view_menu.addAction(act_export_png)
+
         # Help
         help_menu = mb.addMenu("Help")
         act_about = QAction("About", self)
@@ -307,6 +313,24 @@ class MainWindow(QMainWindow):
             self._run_next_in_queue()
         else:
             self._queue_running = False
+
+    def _on_params_updated(self, params: dict):
+        """Show extracted parameters in the status bar."""
+        parts = []
+        if "R" in params:
+            from .panels.plot_panel import _fmt_si
+            parts.append(f"R = {_fmt_si(params['R'], 'Ω')}")
+            parts.append(f"R² = {params['R_sq']:.6f}")
+        if "gm_pk" in params:
+            from .panels.plot_panel import _fmt_si
+            parts.append(f"gm_pk = {_fmt_si(params['gm_pk'], 'S')}")
+        if "Vth" in params and not (isinstance(params["Vth"], float) and params["Vth"] != params["Vth"]):
+            parts.append(f"Vth = {params['Vth']:.3f} V")
+        if "gd_max" in params:
+            from .panels.plot_panel import _fmt_si
+            parts.append(f"gd_max = {_fmt_si(params['gd_max'], 'S')}")
+        if parts:
+            self._set_status("  |  ".join(parts), color=theme.AMBER)
 
     def _on_error(self, msg: str):
         self._plot_panel.mark_error(msg)
