@@ -9,6 +9,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0] — 2026-04-03
+
+### Changed
+
+- **Three side-by-side live plots** — replaced the single-tab + Forced/Sensed
+  toggle with a horizontal `QSplitter` containing three simultaneously visible
+  `PlotWidget`s: *Forced V* (left), *Sensed V* (centre), and *Analysis* (right).
+  All three update in real time as data arrives.  The analysis pane shows
+  log |I| during the sweep, then is replaced at sweep completion with the
+  type-specific post-sweep result (Residuals / gm / gd).
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Fit line shown on both Forced and Sensed panes** — resistor best-fit line
+  is computed independently for V_forced and V_sensed and drawn on each pane.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+### Fixed
+
+- **Forced/Sensed plots not rendering** — the previous toggle approach shared
+  a single curve dict with `_pw1`; switching mode called `_redraw_pw1()` but
+  the curve objects were already attached to the old plot item.  The new design
+  creates independent `PlotDataItem` pairs (one per pane) so each pane always
+  holds its own live data.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Fonts not scaling with window / DPI** — removed hardcoded `font-size:8pt`
+  inline overrides from `InstrumentRow` (address label and 2W/4W button) and
+  `MainWindow` top-bar labels; all sizes now use `theme.FONT_SIZE_*` constants.
+  Added `_apply_dpi_font_scale()` in `__main__.py` that bumps the theme
+  constants proportionally when the primary screen reports > 120 DPI.
+  ([\_\_main\_\_.py](src/keithley_iv_suite/__main__.py),
+  [instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py),
+  [main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+- **Single instrument badly positioned in Discovered panel** — added
+  `AlignTop` to the `_scroll_content` `QVBoxLayout` so a lone instrument row
+  sits at the top of the group box instead of vertically centred or expanded.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+- **"Disconnect" button text clipped** — increased `setMinimumWidth` from 90
+  to 110 px to give "Disconnect" (10 chars + padding) enough room at all font
+  sizes.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+- **Autoscale (Ctrl+A) only scaled the forced plot** — menu action now calls
+  `_autoscale_all()` which calls `autoRange()` on all three plot widgets.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+---
+
 ## [1.1.0] — 2026-04-03
 
 ### Added

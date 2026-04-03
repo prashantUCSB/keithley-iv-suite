@@ -95,7 +95,7 @@ class InstrumentRow(QWidget):
         if not self.is_smu and self.idn:
             addr_text = self.idn[:40]
         self._addr_lbl = ElidedLabel(addr_text)
-        self._addr_lbl.setStyleSheet(f"font-size:8pt; color:{theme.TEXT_MUTED};")
+        self._addr_lbl.setProperty("role", "muted")
         info.addWidget(self._name_lbl)
         info.addWidget(self._addr_lbl)
         layout.addLayout(info, stretch=1)
@@ -106,7 +106,7 @@ class InstrumentRow(QWidget):
             self._sense_btn.setFixedWidth(36)
             self._sense_btn.setToolTip("Toggle 2-wire / 4-wire remote sense")
             self._sense_btn.setStyleSheet(
-                f"font-size:8pt; font-weight:700; color:{theme.TEXT_MUTED};"
+                f"font-weight:700; color:{theme.TEXT_MUTED};"
             )
             self._sense_btn.clicked.connect(self._toggle_sense)
             layout.addWidget(self._sense_btn)
@@ -114,7 +114,7 @@ class InstrumentRow(QWidget):
             self._sense_btn = None
 
         self._btn = QPushButton("Connect" if self.is_smu else "—")
-        self._btn.setMinimumWidth(90)
+        self._btn.setMinimumWidth(110)
         self._btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         if self.is_smu:
             self._btn.clicked.connect(self._on_button)
@@ -130,7 +130,7 @@ class InstrumentRow(QWidget):
         if self._sense_btn:
             self._sense_btn.setEnabled(ok)
             self._sense_btn.setStyleSheet(
-                f"font-size:8pt; font-weight:700;"
+                f"font-weight:700;"
                 f" color:{'#00BFFF' if (ok and self._remote_sense) else theme.TEXT_MUTED};"
             )
 
@@ -154,7 +154,7 @@ class InstrumentRow(QWidget):
         color = "#00BFFF" if self._remote_sense else theme.TEXT_MUTED
         self._sense_btn.setText(label)
         self._sense_btn.setStyleSheet(
-            f"font-size:8pt; font-weight:700; color:{color};"
+            f"font-weight:700; color:{color};"
         )
         self.sense_mode_changed.emit(self.resource_string, self._remote_sense)
 
@@ -250,6 +250,7 @@ class InstrumentPanel(QWidget):
         list_layout.setSpacing(4)
         self._scroll_content = QVBoxLayout()
         self._scroll_content.setSpacing(2)
+        self._scroll_content.setAlignment(Qt.AlignmentFlag.AlignTop)
         list_layout.addLayout(self._scroll_content)
         root.addWidget(self._list_box, stretch=1)
 

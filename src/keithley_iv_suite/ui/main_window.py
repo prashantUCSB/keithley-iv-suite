@@ -125,19 +125,23 @@ class MainWindow(QMainWindow):
 
         # Logo / title
         logo = QLabel("◈")
-        logo.setStyleSheet(f"color: {theme.AMBER}; font-size: 18pt; font-weight: 700;")
+        logo.setStyleSheet(
+            f"color: {theme.AMBER}; font-size: {theme.FONT_SIZE_TITLE + 4}pt; font-weight: 700;"
+        )
         layout.addWidget(logo)
 
         title = QLabel("Keithley IV Suite")
         title.setStyleSheet(
-            f"color: {theme.TEXT_PRIMARY}; font-size: 14pt; font-weight: 700;"
+            f"color: {theme.TEXT_PRIMARY}; font-size: {theme.FONT_SIZE_TITLE}pt; font-weight: 700;"
         )
         layout.addWidget(title)
         layout.addStretch()
 
         # Status indicator
         self._conn_status_lbl = QLabel("No VISA connection")
-        self._conn_status_lbl.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 9pt;")
+        self._conn_status_lbl.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_SIZE_SMALL}pt;"
+        )
         layout.addWidget(self._conn_status_lbl)
 
         return bar
@@ -202,7 +206,7 @@ class MainWindow(QMainWindow):
 
         act_autoscale = QAction("Autoscale Plot", self)
         act_autoscale.setShortcut(QKeySequence("Ctrl+A"))
-        act_autoscale.triggered.connect(self._plot_panel._plot_widget.autoRange)
+        act_autoscale.triggered.connect(self._plot_panel._autoscale_all)
         view_menu.addAction(act_autoscale)
 
         act_export_png = QAction("Export Plot as PNG…", self)
@@ -243,8 +247,8 @@ class MainWindow(QMainWindow):
             else "No instruments connected"
         )
         self._conn_status_lbl.setStyleSheet(
-            f"color: {theme.SUCCESS}; font-size: 9pt;" if n
-            else f"color: {theme.TEXT_MUTED}; font-size: 9pt;"
+            f"color: {theme.SUCCESS}; font-size: {theme.FONT_SIZE_SMALL}pt;" if n
+            else f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_SIZE_SMALL}pt;"
         )
 
     # ------------------------------------------------------------------
