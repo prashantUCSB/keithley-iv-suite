@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.7] — 2026-04-02
+
+### Fixed
+
+- **Root cause of "cannot modify table" TSP error** — `output_on()` and
+  `output_off()` sent `smua.output = ...` which is not a valid TSP attribute.
+  The 2600-series TSP `__newindex` metamethod rejects unknown fields on the
+  `smua`/`smub` table with "cannot modify table". Correct attribute is
+  `smua.source.output` (confirmed against the Keithley MATLAB reference
+  implementation). Also corrected `configure_voltage_source()` end-of-config
+  command from `source.levelv = 0` to `source.output = OUTPUT_OFF` to match.
+  ([smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
+
+---
+
 ## [1.0.6] — 2026-04-02
 
 ### Fixed

@@ -85,7 +85,7 @@ class SMU2600(SMUBase):
             self._tsp(f"{smu}.source.autorangev = 1")   # 1 = AUTORANGE_ON
         self._tsp(f"{smu}.source.limiti = {compliance_current}")
         self._tsp(f"{smu}.measure.autorangei = 1")       # 1 = AUTORANGE_ON
-        self._tsp(f"{smu}.source.levelv = 0")
+        self._tsp(f"{smu}.source.output = {smu}.OUTPUT_OFF")
         log.debug(
             "SMU2600 Ch%s configured: Vsource, Ilim=%.3e A",
             self._channel,
@@ -96,12 +96,12 @@ class SMU2600(SMUBase):
         self._tsp(f"{self._smu}.source.levelv = {voltage:.6g}")
 
     def output_on(self) -> None:
-        self._tsp(f"{self._smu}.output = {self._smu}.OUTPUT_ON")
+        self._tsp(f"{self._smu}.source.output = {self._smu}.OUTPUT_ON")
         self._output_on = True
         time.sleep(self._delay_s)
 
     def output_off(self) -> None:
-        self._tsp(f"{self._smu}.output = {self._smu}.OUTPUT_OFF")
+        self._tsp(f"{self._smu}.source.output = {self._smu}.OUTPUT_OFF")
         self._output_on = False
 
     @staticmethod
