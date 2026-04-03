@@ -9,6 +9,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.8] — 2026-04-02
+
+### Changed
+
+- **Auto-scaling SI prefix axis labels** — plot axes now display natural
+  unit prefixes (mA, µA, nA, pA, fA, mV, …) instead of raw SI (A, V).
+  X-axis prefix is pre-selected from the sweep voltage range at measurement
+  start. Y-axis prefix starts from the compliance estimate and updates
+  live as each point arrives — all curves are redrawn immediately when the
+  prefix changes so the scale is always correct.
+  Supported prefixes: f, p, n, µ, m, (none), k.
+  Raw SI values are still stored internally and exported to CSV unchanged.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+---
+
 ## [1.0.7] — 2026-04-02
 
 ### Fixed
