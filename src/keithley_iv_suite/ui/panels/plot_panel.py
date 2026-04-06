@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QColorDialog, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
@@ -151,6 +151,12 @@ class PlotPanel(QWidget):
         self._y_name = "Y";  self._y_base = "A"
 
         self._selected_cid: int | None = None
+
+        # ── paint throttle (25 Hz max) ────────────────────────────────
+        self._dirty = False
+        self._paint_timer = QTimer(self)
+        self._paint_timer.setInterval(40)          # ms → 25 Hz
+        self._paint_timer.timeout.connect(self._flush_paint)
 
         self._build_ui()
 
@@ -321,7 +327,7 @@ class PlotPanel(QWidget):
         self._eq_lbl.setText("")
 
     def append_point(self, v_forced: float, i_meas: float, v_sensed: float, curve_id: int = 0):
-        """Store raw SI point and update all three live plots."""
+        """Store raw SI point; actual repaints are batched at 25 Hz by _flush_paint."""
         # ── allocate new curve set ────────────────────────────────────
         if curve_id not in self._data_forced:
             self._data_forced[curve_id] = ([], [])
@@ -337,7 +343,7 @@ class PlotPanel(QWidget):
         self._data_sensed[curve_id][0].append(v_sensed)
         self._data_sensed[curve_id][1].append(i_meas)
 
-        # ── update Y scale ────────────────────────────────────────────
+        # ── track Y scale — update axis label only, no repaint ───────
         abs_y = abs(i_meas)
         if abs_y > self._y_max_abs:
             self._y_max_abs = abs_y
@@ -346,30 +352,39 @@ class PlotPanel(QWidget):
                 self._y_scale = new_scale
                 self._pw_forced.setLabel("left", f"{self._y_name} ({new_unit})")
                 self._pw_sensed.setLabel("left", f"{self._y_name} ({new_unit})")
-                self._redraw_live()
-                self._tick(); return
 
-        # ── update linear curves ──────────────────────────────────────
-        xf, yf = self._data_forced[curve_id]
-        self._curves_forced[curve_id].setData(
-            np.array(xf) * self._x_scale,
-            np.array(yf) * self._y_scale,
-        )
-        xs, ys = self._data_sensed[curve_id]
-        self._curves_sensed[curve_id].setData(
-            np.array(xs) * self._x_scale,
-            np.array(ys) * self._y_scale,
-        )
-        # ── update log curve (analysis pane, live) ────────────────────
-        if curve_id in self._curves_log:
-            i_abs = np.abs(np.array(ys))
-            mask = i_abs > 0
-            if mask.any():
-                self._curves_log[curve_id].setData(
-                    np.array(xs)[mask] * self._x_scale,
-                    i_abs[mask],
-                )
+        self._dirty = True
         self._tick()
+        if not self._paint_timer.isActive():
+            self._paint_timer.start()
+
+    def _flush_paint(self):
+        """Repaint all three live plots — called by the 25 Hz timer."""
+        if not self._dirty:
+            self._paint_timer.stop()
+            return
+        self._dirty = False
+
+        for cid, (xf, yf) in self._data_forced.items():
+            if cid in self._curves_forced:
+                self._curves_forced[cid].setData(
+                    np.array(xf) * self._x_scale,
+                    np.array(yf) * self._y_scale,
+                )
+        for cid, (xs, ys) in self._data_sensed.items():
+            if cid in self._curves_sensed:
+                self._curves_sensed[cid].setData(
+                    np.array(xs) * self._x_scale,
+                    np.array(ys) * self._y_scale,
+                )
+            if cid in self._curves_log:
+                i_abs = np.abs(np.array(ys))
+                mask = i_abs > 0
+                if mask.any():
+                    self._curves_log[cid].setData(
+                        np.array(xs)[mask] * self._x_scale,
+                        i_abs[mask],
+                    )
 
     def _make_curves(self, cid: int, style: CurveStyle):
         """Create linear curves on pw_forced / pw_sensed and log curve on pw_analysis."""
@@ -396,21 +411,6 @@ class PlotPanel(QWidget):
             return None
         return pg.mkPen(color=style.color, width=style.line_width, style=ls)
 
-    def _redraw_live(self):
-        """Redraw forced and sensed curves after a Y-scale change."""
-        for cid, (xs, ys) in self._data_forced.items():
-            if cid in self._curves_forced:
-                self._curves_forced[cid].setData(
-                    np.array(xs) * self._x_scale,
-                    np.array(ys) * self._y_scale,
-                )
-        for cid, (xs, ys) in self._data_sensed.items():
-            if cid in self._curves_sensed:
-                self._curves_sensed[cid].setData(
-                    np.array(xs) * self._x_scale,
-                    np.array(ys) * self._y_scale,
-                )
-
     def _tick(self):
         self._received_pts += 1
         self._pts_lbl.setText(f"{self._received_pts} pts")
@@ -422,6 +422,8 @@ class PlotPanel(QWidget):
         self._pts_lbl.setText(f"{step}/{total} pts")
 
     def mark_done(self):
+        self._flush_paint()          # ensure every point is drawn before analysis
+        self._paint_timer.stop()
         self._pts_lbl.setText(f"{self._received_pts} pts ✓")
         if self._total_pts > 0:
             self._progress.setValue(self._total_pts)
@@ -437,6 +439,8 @@ class PlotPanel(QWidget):
         self._pts_lbl.setStyleSheet(f"color:{theme.ERROR};")
 
     def clear(self):
+        self._paint_timer.stop()
+        self._dirty = False
         for pw in (self._pw_forced, self._pw_sensed, self._pw_analysis):
             pw.clear(); pw.setLogMode(y=False)
         self._curves_forced.clear()

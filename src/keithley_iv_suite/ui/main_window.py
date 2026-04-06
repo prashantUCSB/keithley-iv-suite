@@ -60,8 +60,8 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle("Keithley IV Suite")
-        self.setMinimumSize(1200, 720)
-        self.resize(1400, 860)
+        self.setMinimumSize(1100, 700)
+        self.resize(1500, 960)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
 
         # Center: config + plot (vertical splitter)
         v_splitter = QSplitter(Qt.Orientation.Vertical)
-        v_splitter.setChildrenCollapsible(False)
+        v_splitter.setChildrenCollapsible(True)
 
         self._sweep_panel = SweepPanel()
         self._sweep_panel.run_requested.connect(self._run_single)
@@ -98,7 +98,11 @@ class MainWindow(QMainWindow):
         self._plot_panel.params_updated.connect(self._on_params_updated)
         v_splitter.addWidget(self._plot_panel)
 
-        v_splitter.setSizes([380, 440])
+        # Sweep panel: fixed height, doesn't grow when window is resized.
+        # Plot panel: takes all available vertical space.
+        v_splitter.setSizes([240, 720])
+        v_splitter.setStretchFactor(0, 0)   # sweep panel — fixed
+        v_splitter.setStretchFactor(1, 1)   # plot panel  — expands
         h_splitter.addWidget(v_splitter)
 
         # Right: queue
@@ -107,7 +111,10 @@ class MainWindow(QMainWindow):
         self._queue_panel.stop_queue_requested.connect(self._stop_measurement)
         h_splitter.addWidget(self._queue_panel)
 
-        h_splitter.setSizes([280, 860, 260])
+        h_splitter.setSizes([280, 940, 260])
+        h_splitter.setStretchFactor(0, 0)   # instrument panel — fixed
+        h_splitter.setStretchFactor(1, 1)   # center           — expands
+        h_splitter.setStretchFactor(2, 0)   # queue panel      — fixed
         main_layout.addWidget(h_splitter, stretch=1)
 
         # ── Status bar ───────────────────────────────────────────────────

@@ -9,6 +9,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.1] — 2026-04-06
+
+### Fixed
+
+- **GUI freeze during measurement** — `append_point` was calling `setData` +
+  triggering a full repaint on every incoming sample, which on three plots can
+  saturate the Qt event loop at high data rates.  All repaints are now batched
+  through a 25 Hz `QTimer` (`_flush_paint`); data accumulates between ticks and
+  the paint timer stops automatically when the sweep ends or is cleared.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Sweep panel dominated the vertical space** — the vertical `QSplitter` was
+  dividing space proportionally on resize, so the sweep config panel grew at the
+  expense of the plots.  Stretch factors are now `0 / 1` (sweep / plots), the
+  initial split is `240 / 720`, and the window default is `1500 × 960`.
+  Sweep panel can now be fully collapsed by dragging the handle.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+- **Instrument and queue panels grew when window was widened** — horizontal
+  splitter stretch factors set to `0 / 1 / 0` so only the centre plot area
+  absorbs extra horizontal space.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+---
+
 ## [1.2.0] — 2026-04-03
 
 ### Changed
