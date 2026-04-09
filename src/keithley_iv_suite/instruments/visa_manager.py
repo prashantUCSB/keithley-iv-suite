@@ -81,39 +81,72 @@ class VISAManager:
             log.error("list_resources failed: %s", exc)
             return []
 
-    def list_resources_with_info(self) -> list[dict]:
+    def list_resources_with_info(
+        self, skip: "set[str] | None" = None
+    ) -> list[dict]:
         """Return only physically reachable resources with IDN metadata.
 
+        Parameters
+        ----------
+        skip : set of resource strings that are already open by connected drivers.
+               Re-opening them causes VI_ERROR_NCIC; they are excluded from the
+               scan probe but their rows remain in the UI from the initial connect.
+
         Resources that cannot be opened OR return an empty *IDN? response are
-        silently dropped from auto-scan results — they are phantom VISA entries
-        (stale NI-MAX aliases, virtual COM ports, USBTMC artefacts, etc.).
-        The user can still add them manually via the Manual Entry box.
+        silently dropped.  Serial ports (ASRL) are noisy false-positives and are
+        always skipped.  The user can add any resource manually via the entry box.
         """
+        skip = skip or set()
         all_resources = self.list_resources()
         log.info("VISA scan: probing %d resource(s): %s", len(all_resources), all_resources)
         results: list[dict] = []
         for rstr in all_resources:
+            # Skip serial ports — they are never Keithley SMUs and always
+            # time out on *IDN?, producing misleading log noise.
+            if rstr.upper().startswith("ASRL"):
+                log.debug("Skipping serial port: %s", rstr)
+                continue
+
+            # Skip resources already held open by our own connected drivers.
+            if rstr in skip:
+                log.debug("Skipping already-connected resource: %s", rstr)
+                continue
+
             info = self._parse_resource_string(rstr)
+
+            # Determine whether the USB vendor ID identifies this as Keithley
+            # hardware.  This takes priority over the IDN-string check so that
+            # is_smu stays True even when the IDN is garbled by stale buffer data.
+            is_keithley_usb = False
+            m = _USB_RE.match(rstr)
+            if m:
+                try:
+                    is_keithley_usb = int(m.group(1), 16) == _KEITHLEY_VENDOR_ID
+                except ValueError:
+                    pass
+
             idn = ""
             try:
                 res = self._rm.open_resource(  # type: ignore[union-attr]
                     rstr, open_timeout=3000
                 )
                 res.timeout = 3000
+                res.read_termination  = "\n"
+                res.write_termination = "\n"
                 try:
-                    # For GPIB, clear any pending I/O before querying to
-                    # avoid receiving a stale response from a prior session.
-                    if rstr.upper().startswith("GPIB"):
-                        try:
-                            res.clear()
-                        except Exception:
-                            pass
+                    # Clear the interface buffer before querying — for USBTMC
+                    # this sends INITIATE_CLEAR which flushes stale measurement
+                    # data that would otherwise be returned instead of the IDN.
+                    try:
+                        res.clear()
+                    except Exception:
+                        pass
                     idn = res.query("*IDN?").strip()
                 except pyvisa.errors.VisaIOError as exc:
-                    log.warning("IDN query timed out for %s: %s", rstr, exc)
+                    log.debug("IDN query failed for %s: %s", rstr, exc)
                     idn = ""
                 except Exception as exc:
-                    log.debug("IDN query failed for %s: %s", rstr, exc)
+                    log.debug("IDN query error for %s: %s", rstr, exc)
                     idn = ""
                 finally:
                     try:
@@ -121,21 +154,43 @@ class VISAManager:
                     except Exception:
                         pass
             except pyvisa.errors.VisaIOError as exc:
-                log.warning("Cannot open resource %s: %s", rstr, exc)
+                # VI_ERROR_NCIC: our own driver still holds this resource open.
+                # Add the entry using hardware ID so the user can still see it.
+                if "NCIC" in str(exc) and is_keithley_usb:
+                    log.info(
+                        "Resource %s is held by an existing session (NCIC) — "
+                        "adding via USB vendor ID", rstr
+                    )
+                    info["idn"] = ""
+                    info["friendly"] = self._friendly_name(rstr, "")
+                    info["is_smu"] = True
+                    results.append(info)
+                else:
+                    log.debug("Cannot open resource %s: %s", rstr, exc)
                 continue
             except Exception as exc:
                 log.debug("Skipping unreachable resource %s: %s", rstr, exc)
                 continue
 
             if not idn:
-                log.debug("Skipping resource with no IDN response: %s", rstr)
+                if is_keithley_usb:
+                    # Hardware ID confirms Keithley device but IDN is empty
+                    # (e.g. instrument is resetting) — add with product-ID name.
+                    log.info("Keithley USB device responded without IDN: %s", rstr)
+                    info["idn"] = ""
+                    info["friendly"] = self._friendly_name(rstr, "")
+                    info["is_smu"] = True
+                    results.append(info)
+                else:
+                    log.debug("Skipping resource with no IDN response: %s", rstr)
                 continue
 
             log.info("Found: %s  IDN=%r", rstr, idn)
             info["idn"] = idn
             info["friendly"] = self._friendly_name(rstr, idn)
-            # Flag whether this looks like a Keithley SMU
-            info["is_smu"] = any(
+            # is_smu: Keithley USB vendor ID takes priority over IDN content
+            # so garbled IDN (stale measurement data) never hides the Connect button.
+            info["is_smu"] = is_keithley_usb or any(
                 k in idn.upper() for k in ("2400", "2401", "2410", "2420",
                                             "2450", "2460", "2470", "2601",
                                             "2602", "2604", "2611", "2612",

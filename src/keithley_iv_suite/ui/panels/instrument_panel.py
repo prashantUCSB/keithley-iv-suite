@@ -45,13 +45,14 @@ _MODEL_DRIVER = {
 class _ScanWorker(QThread):
     done = pyqtSignal(list)
 
-    def __init__(self, vm: VISAManager):
+    def __init__(self, vm: VISAManager, skip_resources: "set[str] | None" = None):
         super().__init__()
         self._vm = vm
+        self._skip = skip_resources or set()
 
     def run(self):
         try:
-            results = self._vm.list_resources_with_info()
+            results = self._vm.list_resources_with_info(skip=self._skip)
         except Exception as exc:
             log.error("VISA scan error: %s", exc)
             results = []
@@ -271,7 +272,16 @@ class InstrumentPanel(QWidget):
         # between the scan's open_resource calls and a manual connect attempt.
         for row in self._rows.values():
             row.setEnabled(False)
-        self._scan_worker = _ScanWorker(self._vm)
+        # Skip resources that our own connected drivers already hold open —
+        # attempting to reopen them causes VI_ERROR_NCIC in NI-VISA.
+        connected_rstrings: set[str] = set()
+        for smu in self._smu_map.values():
+            if hasattr(smu, "_resource"):
+                try:
+                    connected_rstrings.add(str(smu._resource.resource_name))
+                except Exception:
+                    pass
+        self._scan_worker = _ScanWorker(self._vm, skip_resources=connected_rstrings)
         self._scan_worker.done.connect(self._on_scan_done)
         self._scan_worker.start()
 
@@ -363,6 +373,15 @@ class InstrumentPanel(QWidget):
                         time.sleep(0.5)
                     else:
                         raise
+
+            # Clear the VISA interface before querying — for USBTMC this sends
+            # INITIATE_CLEAR which flushes any stale measurement data from the
+            # instrument's output buffer (e.g. a previous sweep's last reading).
+            try:
+                res.clear()
+                time.sleep(0.05)
+            except Exception:
+                pass
 
             # Query *IDN? — retry once on timeout (instrument may be processing
             # a previous command from the scan).
