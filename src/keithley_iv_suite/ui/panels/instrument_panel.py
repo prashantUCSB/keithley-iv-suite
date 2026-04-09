@@ -103,11 +103,16 @@ class InstrumentRow(QWidget):
 
         # 2W/4W sense toggle — only meaningful for SMUs
         if self.is_smu:
-            self._sense_btn = QPushButton("2W")
-            self._sense_btn.setFixedWidth(36)
-            self._sense_btn.setToolTip("Toggle 2-wire / 4-wire remote sense")
+            self._sense_btn = QPushButton("2W Sense")
+            self._sense_btn.setMinimumWidth(68)
+            self._sense_btn.setToolTip(
+                "2W Sense (local) — standard two-wire measurement\n"
+                "4W Sense (remote) — four-wire Kelvin measurement;\n"
+                "eliminates lead resistance; use for low-resistance devices.\n"
+                "Connect separate Force and Sense leads to each terminal."
+            )
             self._sense_btn.setStyleSheet(
-                f"font-weight:700; color:{theme.TEXT_MUTED};"
+                f"font-size:8pt; font-weight:700; color:{theme.TEXT_MUTED};"
             )
             self._sense_btn.clicked.connect(self._toggle_sense)
             layout.addWidget(self._sense_btn)
@@ -130,9 +135,10 @@ class InstrumentRow(QWidget):
         self._btn.setText("Disconnect" if ok else "Connect")
         if self._sense_btn:
             self._sense_btn.setEnabled(ok)
+            active = ok and self._remote_sense
+            color = "#00BFFF" if active else theme.TEXT_MUTED
             self._sense_btn.setStyleSheet(
-                f"font-weight:700;"
-                f" color:{'#00BFFF' if (ok and self._remote_sense) else theme.TEXT_MUTED};"
+                f"font-size:8pt; font-weight:700; color:{color};"
             )
 
     def set_error(self):
@@ -151,11 +157,11 @@ class InstrumentRow(QWidget):
 
     def _toggle_sense(self):
         self._remote_sense = not self._remote_sense
-        label = "4W" if self._remote_sense else "2W"
+        label = "4W Sense" if self._remote_sense else "2W Sense"
         color = "#00BFFF" if self._remote_sense else theme.TEXT_MUTED
         self._sense_btn.setText(label)
         self._sense_btn.setStyleSheet(
-            f"font-weight:700; color:{color};"
+            f"font-size:8pt; font-weight:700; color:{color};"
         )
         self.sense_mode_changed.emit(self.resource_string, self._remote_sense)
 

@@ -251,11 +251,18 @@ class VISAManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _usb_device_key(rstr: str) -> "tuple[str, str, str] | None":
-        """Return (vendor, product, serial) for a USB resource string, else None."""
+    def _usb_device_key(rstr: str) -> "tuple[int, int, str] | None":
+        """Return (vendor_int, product_int, serial_upper) for a USB resource, else None.
+
+        Using integers for vendor/product prevents false non-matches between
+        '0x05E6' and '0x5E6' which NI-VISA can generate for the same device.
+        """
         m = _USB_SERIAL_RE.match(rstr)
         if m:
-            return (m.group(1).upper(), m.group(2).upper(), m.group(3).upper())
+            try:
+                return (int(m.group(1), 16), int(m.group(2), 16), m.group(3).upper())
+            except ValueError:
+                pass
         return None
 
     @staticmethod

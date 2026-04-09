@@ -76,6 +76,25 @@ class SMU2400(SMUBase):
     def set_voltage(self, voltage: float) -> None:
         self._write(f":SOUR:VOLT:LEV {voltage:.6g}")
 
+    def configure_current_source(
+        self,
+        compliance_voltage: float,
+        current_range=None,
+    ) -> None:
+        self._write(":SOUR:FUNC CURR")
+        if current_range is not None:
+            self._write(f":SOUR:CURR:RANG {current_range:.6g}")
+        else:
+            self._write(":SOUR:CURR:RANG:AUTO ON")
+        self._write(":SENS:FUNC \"VOLT:DC\"")
+        self._write(":SENS:VOLT:RANG:AUTO ON")
+        self._write(f":SENS:VOLT:PROT {compliance_voltage:.6g}")
+        self._write(":FORM:ELEM VOLT,CURR")
+        log.debug("SMU2400 configured: Isource, Vlim=%.3g V", compliance_voltage)
+
+    def set_current(self, current: float) -> None:
+        self._write(f":SOUR:CURR:LEV {current:.6g}")
+
     def output_on(self) -> None:
         self._write(":OUTP ON")
         self._output_on = True

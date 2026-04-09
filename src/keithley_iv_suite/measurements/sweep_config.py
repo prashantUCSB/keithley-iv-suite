@@ -7,18 +7,38 @@ from typing import Optional
 
 
 class MeasurementType(Enum):
-    NMOS_TRANSFER = "nMOS Transfer (Id-Vgs)"
-    NMOS_OUTPUT = "nMOS Output (Id-Vds)"
-    RESISTOR_IV = "Resistor IV"
+    NMOS_TRANSFER  = "nMOS Transfer (Id-Vgs)"
+    NMOS_OUTPUT    = "nMOS Output (Id-Vds)"
+    RESISTOR_IV    = "Resistor IV"
+    VAN_DER_PAUW   = "Van der Pauw (Rs)"
+    HALL_BAR       = "Hall Bar (Rxy, n, µ)"
+    GENERIC_4PORT  = "Generic 4-Port"
 
 
 class TerminalRole(Enum):
-    GATE = "Gate"
-    DRAIN = "Drain"
-    SOURCE = "Source"
+    # MOSFET
+    GATE       = "Gate"
+    DRAIN      = "Drain"
+    SOURCE     = "Source"
+    # Resistor / 2-terminal
     TERMINAL_1 = "Terminal 1"
     TERMINAL_2 = "Terminal 2"
-    GROUND = "Ground"   # floating terminal tied to 0V
+    # Van der Pauw / Hall bar current path
+    I_PLUS     = "I+"
+    I_MINUS    = "I-"
+    # Van der Pauw / Hall bar voltage sense
+    V_PLUS     = "V+"
+    V_MINUS    = "V-"
+    # Hall bar extra sense pair
+    V_HALL_PLUS  = "V_Hall+"
+    V_HALL_MINUS = "V_Hall-"
+    # Generic 4-port
+    T1 = "T1"
+    T2 = "T2"
+    T3 = "T3"
+    T4 = "T4"
+    # Common
+    GROUND = "Ground"
 
 
 @dataclass
@@ -122,3 +142,90 @@ class ResistorConfig(SweepConfig):
             round(self.v_start + i * self.v_step, 9)
             for i in range(n)
         ]
+
+
+@dataclass
+class VanDerPauwConfig(SweepConfig):
+    """Van der Pauw sheet-resistance measurement.
+
+    One SMU sweeps current (I+ → I−), a second SMU acts as voltmeter (V+/V−).
+    Run twice (use 'Overlay runs') for the two reciprocal probe configurations,
+    then compute Rs via the van der Pauw equation.
+    """
+    measurement_type: MeasurementType = MeasurementType.VAN_DER_PAUW
+    i_start: float = -1e-5      # A  (−10 µA)
+    i_stop:  float =  1e-5      # A  (+10 µA)
+    i_step:  float =  1e-6      # A  (1 µA)
+    compliance_V: float = 10.0
+    thickness_m: Optional[float] = None   # sample thickness for ρ calculation
+
+    @property
+    def i_points(self) -> int:
+        if self.i_step == 0:
+            return 1
+        return int(abs(self.i_stop - self.i_start) / abs(self.i_step)) + 1
+
+    def i_list(self) -> list[float]:
+        n = self.i_points
+        return [round(self.i_start + k * self.i_step, 15) for k in range(n)]
+
+
+@dataclass
+class HallBarConfig(SweepConfig):
+    """Hall bar longitudinal + Hall resistance measurement.
+
+    SMU_I sweeps current (−I_max → +I_max); SMU_V acts as voltmeter on the
+    transverse (Hall) contacts.  The current-source channel's own voltage
+    readback gives the longitudinal (2-probe) resistance.
+
+    Both R_xx (longitudinal) and R_xy (Hall) are plotted as two curves.
+    R_H, sheet carrier density n_s, and Hall mobility µ_H are computed
+    post-sweep from the fitted slopes.
+    """
+    measurement_type: MeasurementType = MeasurementType.HALL_BAR
+    i_start: float = -1e-5      # A
+    i_stop:  float =  1e-5      # A
+    i_step:  float =  1e-6      # A
+    compliance_V: float = 10.0
+    b_field_T: float = 0.0      # magnetic field (T) — set manually on magnet
+    thickness_m: Optional[float] = None   # for ρ calculation
+
+    @property
+    def i_points(self) -> int:
+        if self.i_step == 0:
+            return 1
+        return int(abs(self.i_stop - self.i_start) / abs(self.i_step)) + 1
+
+    def i_list(self) -> list[float]:
+        n = self.i_points
+        return [round(self.i_start + k * self.i_step, 15) for k in range(n)]
+
+
+@dataclass
+class Generic4PortConfig(SweepConfig):
+    """Generic 4-terminal voltage sweep.
+
+    T1 is swept; T2, T3 are held at fixed bias; T4 is grounded.
+    Measures I at T1.  Use for any device whose port semantics don't
+    match the labelled MOSFET / resistor / VdP tabs.
+    """
+    measurement_type: MeasurementType = MeasurementType.GENERIC_4PORT
+    v_start: float = 0.0
+    v_stop:  float = 1.0
+    v_step:  float = 0.05
+    compliance_A: float = 0.1
+    # Fixed biases on secondary terminals (NaN = leave floating / unconnected)
+    v_t2_bias: float = 0.0
+    v_t3_bias: float = 0.0
+    comp_t2_A: float = 0.01
+    comp_t3_A: float = 0.01
+
+    @property
+    def v_points(self) -> int:
+        if self.v_step == 0:
+            return 1
+        return int(abs(self.v_stop - self.v_start) / abs(self.v_step)) + 1
+
+    def v_list(self) -> list[float]:
+        n = self.v_points
+        return [round(self.v_start + k * self.v_step, 9) for k in range(n)]

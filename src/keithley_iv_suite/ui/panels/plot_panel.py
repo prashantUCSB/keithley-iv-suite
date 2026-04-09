@@ -16,7 +16,8 @@ from PyQt6.QtWidgets import (
 
 from .. import theme
 from ...measurements.sweep_config import (
-    MeasurementType, OutputConfig, ResistorConfig, SweepConfig, TransferConfig,
+    Generic4PortConfig, HallBarConfig, MeasurementType,
+    OutputConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
 )
 
 pg.setConfigOptions(antialias=True, foreground=theme.TEXT_SECONDARY, background=theme.PLOT_BG)
@@ -29,9 +30,17 @@ _SI_PREFIXES: list[tuple[float, str]] = [
 ]
 
 _AXIS_CONFIG: dict[MeasurementType, tuple[str, str, str, str]] = {
-    MeasurementType.NMOS_TRANSFER: ("Vgs", "V", "Id", "A"),
-    MeasurementType.NMOS_OUTPUT:   ("Vds", "V", "Id", "A"),
-    MeasurementType.RESISTOR_IV:   ("V",   "V", "I",  "A"),
+    MeasurementType.NMOS_TRANSFER: ("Vgs",  "V", "Id",  "A"),
+    MeasurementType.NMOS_OUTPUT:   ("Vds",  "V", "Id",  "A"),
+    MeasurementType.RESISTOR_IV:   ("V",    "V", "I",   "A"),
+    MeasurementType.VAN_DER_PAUW:  ("I",    "A", "V",   "V"),
+    MeasurementType.HALL_BAR:      ("I",    "A", "V",   "V"),
+    MeasurementType.GENERIC_4PORT: ("V_T1", "V", "I_T1","A"),
+}
+
+# Display labels for each curve_id (Hall bar emits 2 curves)
+_CURVE_LABELS: dict[MeasurementType, dict[int, str]] = {
+    MeasurementType.HALL_BAR: {0: "V_long", 1: "V_Hall"},
 }
 
 _LINE_STYLES = {
@@ -578,7 +587,11 @@ class PlotPanel(QWidget):
             self._overlay_resistor()
         elif mt == MeasurementType.NMOS_TRANSFER:
             self._overlay_transfer()
-        # Output: family of curves needs no extra annotation
+        elif mt == MeasurementType.VAN_DER_PAUW:
+            self._overlay_vdp()
+        elif mt == MeasurementType.HALL_BAR:
+            self._overlay_hall()
+        # Output / Generic 4-port: curves are self-explanatory
 
     def _overlay_resistor(self):
         active = self._active_data()
@@ -692,6 +705,148 @@ class PlotPanel(QWidget):
             parts.append(f"Vth ≈ {Vth:.3f} V")
         self._eq_lbl.setText("     ".join(parts))
         self.params_updated.emit({"gm_pk": gm_pk, "Vth": Vth, "vgs_at_gm_pk": vgs_gm})
+
+    def _overlay_vdp(self):
+        """Fit line for each VdP config; annotate R and (if two configs) Rs."""
+        active = self._active_data()
+        cur = {cid: d for cid, d in active.items()
+               if cid in self._current_sweep_cids} or active
+        i_all = np.concatenate([np.array(xs) for xs, _ in cur.values()])
+        v_all = np.concatenate([np.array(ys) for _, ys in cur.values()])
+        if len(i_all) < 2 or np.ptp(i_all) == 0:
+            return
+
+        m, b = np.polyfit(i_all, v_all, 1)
+        R_fit = float(m)  # Ω  (V = R*I + offset)
+        i_pred = m * i_all + b
+        ss_res = float(np.sum((v_all - i_pred) ** 2))
+        ss_tot = float(np.sum((v_all - v_all.mean()) ** 2))
+        r_sq   = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+
+        pad   = (i_all.max() - i_all.min()) * 0.15
+        i_ext = np.linspace(i_all.min() - pad, i_all.max() + pad, 200)
+        fit_line = self._pw.plot(
+            i_ext * self._x_scale,
+            (m * i_ext + b) * self._y_scale,
+            pen=pg.mkPen(self._overlay_line_color, width=2,
+                         style=Qt.PenStyle.DashLine),
+        )
+        self._overlay_items.append(fit_line)
+
+        body = f"R = {_fmt_si(R_fit, 'Ω')}<br>R² = {r_sq:.6f}"
+
+        # If >1 curve (two overlay configs), attempt van der Pauw equation
+        all_cids = sorted(active.keys())
+        Rs_str = ""
+        if len(all_cids) >= 2:
+            R_fits = []
+            for cid in all_cids[:2]:
+                xs, ys = active[cid]
+                ia, va = np.array(xs), np.array(ys)
+                if len(ia) >= 2 and np.ptp(ia) > 0:
+                    R_fits.append(float(np.polyfit(ia, va, 1)[0]))
+            if len(R_fits) == 2:
+                Rs = self._solve_vdp(R_fits[0], R_fits[1])
+                if Rs is not None:
+                    Rs_str = f"<br>Rs = {_fmt_si(Rs, 'Ω/□')}"
+                    body += Rs_str
+
+        ann = DraggableText(html=_annot(body), anchor=(0.0, 1.0))
+        self._pw.addItem(ann)
+        self._overlay_items.append(ann)
+        ann.setPos(float(i_ext[10]) * self._x_scale,
+                   float((m * i_ext + b).max()) * self._y_scale)
+
+        visible = self._fit_visible_chk.isChecked()
+        fit_line.setVisible(visible)
+        ann.setVisible(visible)
+
+        eq = f"R = {_fmt_si(R_fit, 'Ω')}   R² = {r_sq:.6f}"
+        if Rs_str:
+            Rs = self._solve_vdp(R_fits[0], R_fits[1])
+            if Rs is not None:
+                eq += f"   Rs = {_fmt_si(Rs, 'Ω/□')}"
+        self._eq_lbl.setText(eq)
+        self.params_updated.emit({"R": R_fit, "R_sq": r_sq})
+
+    @staticmethod
+    def _solve_vdp(R1: float, R2: float) -> "float | None":
+        """Numerically solve  exp(-π R1/Rs) + exp(-π R2/Rs) = 1  for Rs."""
+        if R1 <= 0 or R2 <= 0:
+            return None
+        from scipy.optimize import brentq  # optional; fall back if not available
+        try:
+            def f(Rs):
+                return np.exp(-np.pi * R1 / Rs) + np.exp(-np.pi * R2 / Rs) - 1.0
+            # Bracket: Rs must be > 0; upper bound is generous
+            Rs_lo = min(R1, R2) * 0.01
+            Rs_hi = (R1 + R2) * 10
+            if f(Rs_lo) * f(Rs_hi) > 0:
+                return None
+            return float(brentq(f, Rs_lo, Rs_hi))
+        except Exception:
+            return None
+
+    def _overlay_hall(self):
+        """Fit R_xx and R_xy slopes; annotate Hall mobility and carrier density."""
+        active = self._active_data()
+        cur = {cid: d for cid, d in active.items()
+               if cid in self._current_sweep_cids} or active
+
+        def _fit_slope(cid):
+            if cid not in cur:
+                return float("nan")
+            xs, ys = cur[cid]
+            ia, va = np.array(xs), np.array(ys)
+            if len(ia) < 2 or np.ptp(ia) == 0:
+                return float("nan")
+            return float(np.polyfit(ia, va, 1)[0])
+
+        R_xx = _fit_slope(min(self._current_sweep_cids, default=0))
+        R_xy = _fit_slope(min(self._current_sweep_cids, default=0) + 1)
+
+        visible = self._fit_visible_chk.isChecked()
+
+        for cid_offset, slope, lbl in [(0, R_xx, "R_xx"), (1, R_xy, "R_xy")]:
+            cid = min(self._current_sweep_cids, default=0) + cid_offset
+            if cid not in cur or np.isnan(slope):
+                continue
+            xs, ys = cur[cid]
+            ia = np.array(xs)
+            pad   = (ia.max() - ia.min()) * 0.15
+            i_ext = np.linspace(ia.min() - pad, ia.max() + pad, 200)
+            fit_line = self._pw.plot(
+                i_ext * self._x_scale,
+                (slope * i_ext) * self._y_scale,
+                pen=pg.mkPen(self._overlay_line_color, width=2,
+                             style=Qt.PenStyle.DashLine),
+            )
+            self._overlay_items.append(fit_line)
+            fit_line.setVisible(visible)
+
+        body = f"R_xx = {_fmt_si(R_xx, 'Ω')}<br>R_xy = {_fmt_si(R_xy, 'Ω')}"
+        if hasattr(self._config, 'b_field_T') and self._config.b_field_T != 0.0:
+            _Q_E = 1.602176634e-19
+            B    = abs(self._config.b_field_T)
+            n_s  = 1.0 / (_Q_E * abs(R_xy) * B) if abs(R_xy) > 0 else float("nan")
+            mu_H = abs(R_xy) / abs(R_xx) if abs(R_xx) > 0 else float("nan")
+            carrier = "n-type" if R_xy > 0 else "p-type"
+            body += (f"<br>n_s = {_fmt_si(n_s, 'm⁻²')}"
+                     f"<br>µ_H = {_fmt_si(mu_H, 'm²/Vs')}"
+                     f"<br>{carrier}")
+
+        ann = DraggableText(html=_annot(body), anchor=(0.0, 1.0))
+        self._pw.addItem(ann)
+        self._overlay_items.append(ann)
+        ann.setVisible(visible)
+        # Position near the top-left of the plot view
+        vr = self._pw.viewRange()
+        ann.setPos(float(vr[0][0]), float(vr[1][1]))
+
+        self._eq_lbl.setText(
+            f"R_xx = {_fmt_si(R_xx, 'Ω')}   R_xy = {_fmt_si(R_xy, 'Ω')}"
+        )
+        self.params_updated.emit({"gd_max": abs(1.0 / R_xx) if abs(R_xx) > 0 else 0.0})
 
     # ── Style toolbar ──────────────────────────────────────────────────────
 
@@ -829,21 +984,33 @@ class PlotPanel(QWidget):
             return max(abs(config.vds_start), abs(config.vds_stop), 0.01)
         if isinstance(config, ResistorConfig):
             return max(abs(config.v_start), abs(config.v_stop), 0.01)
+        if isinstance(config, (VanDerPauwConfig, HallBarConfig)):
+            return max(abs(config.i_start), abs(config.i_stop), 1e-9)
+        if isinstance(config, Generic4PortConfig):
+            return max(abs(config.v_start), abs(config.v_stop), 0.01)
         return 1.0
 
     @staticmethod
     def _config_v_range(config: SweepConfig) -> tuple[float, float]:
-        """Return (vmin, vmax) in raw SI (V) for the primary sweep axis."""
+        """Return (x_min, x_max) in raw SI for the primary sweep axis."""
         if isinstance(config, TransferConfig):
             return config.vgs_start, config.vgs_stop
         if isinstance(config, OutputConfig):
             return config.vds_start, config.vds_stop
         if isinstance(config, ResistorConfig):
             return config.v_start, config.v_stop
+        if isinstance(config, (VanDerPauwConfig, HallBarConfig)):
+            return config.i_start, config.i_stop
+        if isinstance(config, Generic4PortConfig):
+            return config.v_start, config.v_stop
         return -1.0, 1.0
 
     @staticmethod
     def _compliance_estimate(config: SweepConfig) -> float:
         if isinstance(config, ResistorConfig):
+            return config.compliance_A
+        if isinstance(config, (VanDerPauwConfig, HallBarConfig)):
+            return config.compliance_V   # y-axis = voltage
+        if isinstance(config, Generic4PortConfig):
             return config.compliance_A
         return config.compliance_drain_A

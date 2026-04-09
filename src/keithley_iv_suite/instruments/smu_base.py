@@ -83,6 +83,35 @@ class SMUBase(ABC):
     def set_voltage(self, voltage: float) -> None: ...
 
     @abstractmethod
+    def configure_current_source(
+        self,
+        compliance_voltage: float,
+        current_range: Optional[float] = None,
+    ) -> None:
+        """Configure as a DC current source.
+
+        Parameters
+        ----------
+        compliance_voltage : voltage compliance limit (V)
+        current_range      : explicit range (A); None = autorange
+        """
+        ...
+
+    @abstractmethod
+    def set_current(self, current: float) -> None:
+        """Set the DC current level (A).  Must call configure_current_source first."""
+        ...
+
+    def configure_voltmeter(self, compliance_voltage: float = 10.0) -> None:
+        """Configure as a high-impedance voltmeter (force 0 A, measure V).
+
+        Default implementation re-uses configure_current_source + set_current(0).
+        Subclasses may override if the hardware has a dedicated voltmeter mode.
+        """
+        self.configure_current_source(compliance_voltage=compliance_voltage)
+        self.set_current(0.0)
+
+    @abstractmethod
     def output_on(self) -> None: ...
 
     @abstractmethod

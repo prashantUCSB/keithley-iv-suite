@@ -95,6 +95,28 @@ class SMU2600(SMUBase):
     def set_voltage(self, voltage: float) -> None:
         self._tsp(f"{self._smu}.source.levelv = {voltage:.6g}")
 
+    def configure_current_source(
+        self,
+        compliance_voltage: float,
+        current_range=None,
+    ) -> None:
+        smu = self._smu
+        self._tsp(f"{smu}.source.func = {smu}.OUTPUT_DCAMPS")
+        if current_range is not None:
+            self._tsp(f"{smu}.source.rangei = {current_range:.6g}")
+        else:
+            self._tsp(f"{smu}.source.autorangei = 1")
+        self._tsp(f"{smu}.source.limitv = {compliance_voltage:.6g}")
+        self._tsp(f"{smu}.measure.autorangev = 1")
+        self._tsp(f"{smu}.source.output = {smu}.OUTPUT_OFF")
+        log.debug(
+            "SMU2600 Ch%s configured: Isource, Vlim=%.3g V",
+            self._channel, compliance_voltage,
+        )
+
+    def set_current(self, current: float) -> None:
+        self._tsp(f"{self._smu}.source.leveli = {current:.6g}")
+
     def output_on(self) -> None:
         self._tsp(f"{self._smu}.source.output = {self._smu}.OUTPUT_ON")
         self._output_on = True

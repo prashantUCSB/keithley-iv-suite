@@ -13,12 +13,15 @@ from PyQt6.QtWidgets import (
 
 from ...instruments.smu_base import SMUBase
 from ...measurements.sweep_config import (
+    Generic4PortConfig,
+    HallBarConfig,
     MeasurementType,
     OutputConfig,
     ResistorConfig,
     TerminalAssignment,
     TerminalRole,
     TransferConfig,
+    VanDerPauwConfig,
 )
 from .. import theme
 
@@ -329,6 +332,228 @@ class ResistorTab(QWidget):
         )
 
 
+def _note(text: str) -> QLabel:
+    """Muted italic helper note label."""
+    lbl = QLabel(text)
+    lbl.setProperty("role", "muted")
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet("font-style: italic; padding: 2px 0;")
+    return lbl
+
+
+# ── Van der Pauw Tab ──────────────────────────────────────────────────────────
+
+class VanDerPauwTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        self.assignment = _AssignmentGroup(
+            [TerminalRole.I_PLUS, TerminalRole.I_MINUS,
+             TerminalRole.V_PLUS, TerminalRole.V_MINUS],
+            "SMU Assignment",
+        )
+        layout.addWidget(self.assignment)
+        layout.addWidget(_note(
+            "I+/I−: current source channel.  V+/V−: voltmeter channel (force 0 A).\n"
+            "Run twice (Config 1 & 2) with 'Overlay runs' enabled.\n"
+            "Rs is solved from the two fitted resistances via the van der Pauw equation."
+        ))
+
+        params = QGroupBox("Sweep Parameters")
+        form = QFormLayout(params)
+        form.setSpacing(6)
+        self.i_start = _spin(-1e-5, mn=-1e-2, mx=1e-2, step=1e-6, decimals=8)
+        self.i_stop  = _spin( 1e-5, mn=-1e-2, mx=1e-2, step=1e-6, decimals=8)
+        self.i_step  = _spin( 1e-6, mn=1e-9,  mx=1e-2, step=1e-7, decimals=9)
+        self.comp_V  = _spin(10.0,  mn=0.1,   mx=200.0, step=1.0, decimals=2)
+        for w in (self.i_start, self.i_stop, self.i_step):
+            w.setSuffix(" A")
+        self.comp_V.setSuffix(" V")
+        form.addRow("I start:", self.i_start)
+        form.addRow("I stop:",  self.i_stop)
+        form.addRow("I step:",  self.i_step)
+        form.addRow("Comp (V):", self.comp_V)
+        layout.addWidget(params)
+
+        thick = QGroupBox("Sample (optional)")
+        tf = QFormLayout(thick)
+        self.thickness = _spin(0.0, mn=0.0, mx=1e-2, step=1e-9, decimals=10)
+        self.thickness.setSuffix(" m")
+        self.thickness.setToolTip("Film thickness in metres — used to compute ρ = Rs × t")
+        tf.addRow("Thickness:", self.thickness)
+        layout.addWidget(thick)
+
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText("Run label (optional — e.g. Config 1)")
+        layout.addWidget(self.label_edit)
+        layout.addStretch()
+
+    def update_instruments(self, smu_map):
+        self.assignment.populate(smu_map)
+
+    def build_config(self) -> VanDerPauwConfig:
+        t = self.thickness.value()
+        return VanDerPauwConfig(
+            label=self.label_edit.text().strip(),
+            i_start=self.i_start.value(),
+            i_stop=self.i_stop.value(),
+            i_step=self.i_step.value(),
+            compliance_V=self.comp_V.value(),
+            thickness_m=t if t > 0.0 else None,
+            assignments=self.assignment.get_assignments(),
+        )
+
+
+# ── Hall Bar Tab ──────────────────────────────────────────────────────────────
+
+class HallBarTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        self.assignment = _AssignmentGroup(
+            [TerminalRole.I_PLUS, TerminalRole.I_MINUS,
+             TerminalRole.V_HALL_PLUS, TerminalRole.V_HALL_MINUS],
+            "SMU Assignment",
+        )
+        layout.addWidget(self.assignment)
+        layout.addWidget(_note(
+            "I+/I−: current source channel.\n"
+            "V_Hall+/V_Hall−: voltmeter on transverse (Hall) contacts.\n"
+            "Longitudinal (R_xx) is read from the current-source terminal voltage.\n"
+            "Set the magnetic field on your magnet before running."
+        ))
+
+        params = QGroupBox("Sweep Parameters")
+        form = QFormLayout(params)
+        form.setSpacing(6)
+        self.i_start = _spin(-1e-5, mn=-1e-2, mx=1e-2, step=1e-6, decimals=8)
+        self.i_stop  = _spin( 1e-5, mn=-1e-2, mx=1e-2, step=1e-6, decimals=8)
+        self.i_step  = _spin( 1e-6, mn=1e-9,  mx=1e-2, step=1e-7, decimals=9)
+        self.comp_V  = _spin(10.0,  mn=0.1,   mx=200.0, step=1.0, decimals=2)
+        for w in (self.i_start, self.i_stop, self.i_step):
+            w.setSuffix(" A")
+        self.comp_V.setSuffix(" V")
+        form.addRow("I start:", self.i_start)
+        form.addRow("I stop:",  self.i_stop)
+        form.addRow("I step:",  self.i_step)
+        form.addRow("Comp (V):", self.comp_V)
+        layout.addWidget(params)
+
+        mag = QGroupBox("Magnetic Field & Geometry")
+        mf = QFormLayout(mag)
+        self.b_field = _spin(0.0, mn=-30.0, mx=30.0, step=0.01, decimals=4)
+        self.b_field.setSuffix(" T")
+        self.b_field.setToolTip("Magnetic field applied to sample (set manually on magnet)")
+        self.thickness = _spin(0.0, mn=0.0, mx=1e-2, step=1e-9, decimals=10)
+        self.thickness.setSuffix(" m")
+        mf.addRow("B field:", self.b_field)
+        mf.addRow("Thickness:", self.thickness)
+        layout.addWidget(mag)
+
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText("Run label (optional)")
+        layout.addWidget(self.label_edit)
+        layout.addStretch()
+
+    def update_instruments(self, smu_map):
+        self.assignment.populate(smu_map)
+
+    def build_config(self) -> HallBarConfig:
+        t = self.thickness.value()
+        return HallBarConfig(
+            label=self.label_edit.text().strip(),
+            i_start=self.i_start.value(),
+            i_stop=self.i_stop.value(),
+            i_step=self.i_step.value(),
+            compliance_V=self.comp_V.value(),
+            b_field_T=self.b_field.value(),
+            thickness_m=t if t > 0.0 else None,
+            assignments=self.assignment.get_assignments(),
+        )
+
+
+# ── Generic 4-Port Tab ────────────────────────────────────────────────────────
+
+class Generic4PortTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        self.assignment = _AssignmentGroup(
+            [TerminalRole.T1, TerminalRole.T2, TerminalRole.T3, TerminalRole.T4],
+            "SMU Assignment",
+        )
+        layout.addWidget(self.assignment)
+        layout.addWidget(_note(
+            "T1: swept voltage source (measures current).\n"
+            "T2, T3: optional fixed bias.  T4: ground / not used.\n"
+            "Use for any device whose connections don't match the labelled tabs."
+        ))
+
+        params = QGroupBox("T1 Sweep")
+        form = QFormLayout(params)
+        form.setSpacing(6)
+        self.v_start = _spin(0.0)
+        self.v_stop  = _spin(1.0)
+        self.v_step  = _spin(0.05, mn=1e-4, mx=10.0, step=0.01)
+        self.comp_A  = _spin(0.1, mn=1e-9, mx=1.5, step=0.01)
+        self.v_start.setSuffix(" V")
+        self.v_stop.setSuffix(" V")
+        self.v_step.setSuffix(" V")
+        self.comp_A.setSuffix(" A")
+        form.addRow("V start:", self.v_start)
+        form.addRow("V stop:",  self.v_stop)
+        form.addRow("V step:",  self.v_step)
+        form.addRow("T1 compliance:", self.comp_A)
+        layout.addWidget(params)
+
+        bias = QGroupBox("T2 / T3 Fixed Bias")
+        bf = QFormLayout(bias)
+        self.v_t2 = _spin(0.0)
+        self.v_t3 = _spin(0.0)
+        self.comp_t2 = _spin(0.01, mn=1e-9, mx=1.5, step=0.001)
+        self.comp_t3 = _spin(0.01, mn=1e-9, mx=1.5, step=0.001)
+        self.v_t2.setSuffix(" V")
+        self.v_t3.setSuffix(" V")
+        self.comp_t2.setSuffix(" A")
+        self.comp_t3.setSuffix(" A")
+        bf.addRow("T2 bias:", self.v_t2)
+        bf.addRow("T2 comp:", self.comp_t2)
+        bf.addRow("T3 bias:", self.v_t3)
+        bf.addRow("T3 comp:", self.comp_t3)
+        layout.addWidget(bias)
+
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText("Run label (optional)")
+        layout.addWidget(self.label_edit)
+        layout.addStretch()
+
+    def update_instruments(self, smu_map):
+        self.assignment.populate(smu_map)
+
+    def build_config(self) -> Generic4PortConfig:
+        return Generic4PortConfig(
+            label=self.label_edit.text().strip(),
+            v_start=self.v_start.value(),
+            v_stop=self.v_stop.value(),
+            v_step=self.v_step.value(),
+            compliance_A=self.comp_A.value(),
+            v_t2_bias=self.v_t2.value(),
+            v_t3_bias=self.v_t3.value(),
+            comp_t2_A=self.comp_t2.value(),
+            comp_t3_A=self.comp_t3.value(),
+            assignments=self.assignment.get_assignments(),
+        )
+
+
 # ── Sweep Panel (container) ──────────────────────────────────────────────────
 
 class SweepPanel(QWidget):
@@ -353,12 +578,18 @@ class SweepPanel(QWidget):
         root.addWidget(header)
 
         self._tabs = QTabWidget()
-        self._transfer_tab = TransferTab()
-        self._output_tab = OutputTab()
-        self._resistor_tab = ResistorTab()
-        self._tabs.addTab(self._transfer_tab, "Transfer (Id-Vgs)")
-        self._tabs.addTab(self._output_tab,   "Output (Id-Vds)")
-        self._tabs.addTab(self._resistor_tab, "Resistor IV")
+        self._transfer_tab   = TransferTab()
+        self._output_tab     = OutputTab()
+        self._resistor_tab   = ResistorTab()
+        self._vdp_tab        = VanDerPauwTab()
+        self._hall_tab       = HallBarTab()
+        self._generic4p_tab  = Generic4PortTab()
+        self._tabs.addTab(self._transfer_tab,  "Transfer (Id-Vgs)")
+        self._tabs.addTab(self._output_tab,    "Output (Id-Vds)")
+        self._tabs.addTab(self._resistor_tab,  "Resistor IV")
+        self._tabs.addTab(self._vdp_tab,       "Van der Pauw")
+        self._tabs.addTab(self._hall_tab,      "Hall Bar")
+        self._tabs.addTab(self._generic4p_tab, "Generic 4-Port")
         root.addWidget(self._tabs, stretch=1)
 
         # Action buttons
@@ -383,7 +614,8 @@ class SweepPanel(QWidget):
 
     def update_instruments(self, smu_map: dict[str, SMUBase]):
         self._smu_map = smu_map
-        for tab in (self._transfer_tab, self._output_tab, self._resistor_tab):
+        for tab in (self._transfer_tab, self._output_tab, self._resistor_tab,
+                    self._vdp_tab, self._hall_tab, self._generic4p_tab):
             tab.update_instruments(smu_map)
 
     def set_running(self, running: bool):
@@ -406,5 +638,6 @@ class SweepPanel(QWidget):
 
     def _current_config(self):
         idx = self._tabs.currentIndex()
-        tabs = [self._transfer_tab, self._output_tab, self._resistor_tab]
+        tabs = [self._transfer_tab, self._output_tab, self._resistor_tab,
+                self._vdp_tab, self._hall_tab, self._generic4p_tab]
         return tabs[idx].build_config()

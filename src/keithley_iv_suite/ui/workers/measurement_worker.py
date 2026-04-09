@@ -8,11 +8,15 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from ...instruments.smu_base import SMUBase
 from ...measurements.sweep_config import (
-    MeasurementType, OutputConfig, ResistorConfig, SweepConfig, TransferConfig,
+    Generic4PortConfig, HallBarConfig, MeasurementType,
+    OutputConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
 )
 from ...measurements.nmos_transfer import run_transfer_sweep
 from ...measurements.nmos_output import run_output_sweep
 from ...measurements.resistor_iv import run_resistor_sweep
+from ...measurements.van_der_pauw import run_vdp_sweep
+from ...measurements.hall_bar import run_hall_sweep
+from ...measurements.generic_4port import run_generic_4port
 
 log = logging.getLogger(__name__)
 
@@ -111,16 +115,67 @@ class MeasurementWorker(QThread):
                 abort_flag=self._abort_flag,
             )
 
+        if mtype == MeasurementType.VAN_DER_PAUW:
+            assert isinstance(cfg, VanDerPauwConfig)
+            i_smu = self._resolve("i_plus", cfg)
+            v_smu = self._resolve("v_plus", cfg)
+            return run_vdp_sweep(
+                config=cfg,
+                i_smu=i_smu,
+                v_smu=v_smu,
+                progress_cb=lambda s, t: self.progress.emit(s, t),
+                data_cb=lambda i, v, vs, ci: self.data_point.emit(i, v, vs, ci),
+                abort_flag=self._abort_flag,
+            )
+
+        if mtype == MeasurementType.HALL_BAR:
+            assert isinstance(cfg, HallBarConfig)
+            i_smu = self._resolve("i_plus", cfg)
+            v_smu = self._resolve("v_hall_plus", cfg)
+            return run_hall_sweep(
+                config=cfg,
+                i_smu=i_smu,
+                v_smu=v_smu,
+                progress_cb=lambda s, t: self.progress.emit(s, t),
+                data_cb=lambda i, v, vs, ci: self.data_point.emit(i, v, vs, ci),
+                abort_flag=self._abort_flag,
+            )
+
+        if mtype == MeasurementType.GENERIC_4PORT:
+            assert isinstance(cfg, Generic4PortConfig)
+            t1 = self._resolve("t1", cfg)
+            t2 = self._resolve_optional("t2", cfg)
+            t3 = self._resolve_optional("t3", cfg)
+            return run_generic_4port(
+                config=cfg,
+                t1_smu=t1,
+                t2_smu=t2,
+                t3_smu=t3,
+                progress_cb=lambda s, t: self.progress.emit(s, t),
+                data_cb=lambda vf, i, vs, ci: self.data_point.emit(vf, i, vs, ci),
+                abort_flag=self._abort_flag,
+            )
+
         raise ValueError(f"Unknown measurement type: {mtype}")
 
     def _resolve(self, role_key: str, cfg: SweepConfig) -> SMUBase:
         from ...measurements.sweep_config import TerminalRole
         role_map = {
-            "gate":       TerminalRole.GATE,
-            "drain":      TerminalRole.DRAIN,
-            "source":     TerminalRole.SOURCE,
-            "terminal_1": TerminalRole.TERMINAL_1,
-            "terminal_2": TerminalRole.TERMINAL_2,
+            "gate":         TerminalRole.GATE,
+            "drain":        TerminalRole.DRAIN,
+            "source":       TerminalRole.SOURCE,
+            "terminal_1":   TerminalRole.TERMINAL_1,
+            "terminal_2":   TerminalRole.TERMINAL_2,
+            "i_plus":       TerminalRole.I_PLUS,
+            "i_minus":      TerminalRole.I_MINUS,
+            "v_plus":       TerminalRole.V_PLUS,
+            "v_minus":      TerminalRole.V_MINUS,
+            "v_hall_plus":  TerminalRole.V_HALL_PLUS,
+            "v_hall_minus": TerminalRole.V_HALL_MINUS,
+            "t1":           TerminalRole.T1,
+            "t2":           TerminalRole.T2,
+            "t3":           TerminalRole.T3,
+            "t4":           TerminalRole.T4,
         }
         role = role_map[role_key]
         assignment = cfg.get_assignment(role)
@@ -136,7 +191,11 @@ class MeasurementWorker(QThread):
 
     def _resolve_optional(self, role_key: str, cfg: SweepConfig) -> Optional[SMUBase]:
         from ...measurements.sweep_config import TerminalRole
-        role_map = {"source": TerminalRole.SOURCE}
+        role_map = {
+            "source":  TerminalRole.SOURCE,
+            "t2":      TerminalRole.T2,
+            "t3":      TerminalRole.T3,
+        }
         role = role_map.get(role_key)
         if role is None:
             return None

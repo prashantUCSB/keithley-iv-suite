@@ -17,7 +17,10 @@ from PyQt6.QtWidgets import (
 from ..instruments.visa_manager import VISAManager
 from ..measurements.queue_manager import MeasurementQueue, QueueItemStatus
 from ..measurements.recipe_loader import load_recipe
-from ..measurements.sweep_config import SweepConfig, TransferConfig, OutputConfig, ResistorConfig
+from ..measurements.sweep_config import (
+    Generic4PortConfig, HallBarConfig, OutputConfig, ResistorConfig,
+    SweepConfig, TransferConfig, VanDerPauwConfig,
+)
 from ..data.exporter import export_csv, default_filename
 from .panels import InstrumentPanel, SweepPanel, PlotPanel, QueuePanel
 from .workers import MeasurementWorker
@@ -506,6 +509,10 @@ class MainWindow(QMainWindow):
         if isinstance(config, OutputConfig):
             return config.vds_points * len(config.vgs_list_values)
         if isinstance(config, ResistorConfig):
+            return config.v_points
+        if isinstance(config, (VanDerPauwConfig, HallBarConfig)):
+            return config.i_points
+        if isinstance(config, Generic4PortConfig):
             return config.v_points
         return 0
 
