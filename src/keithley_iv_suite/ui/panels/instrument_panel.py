@@ -32,14 +32,13 @@ class ElidedLabel(QLabel):
         painter.drawText(self.rect(), int(self.alignment()), elided)
 
 
-_MODEL_DRIVER = {
-    "2400":  ("2400",  SMU2400),
-    "2401":  ("2401",  SMU2400),
-    "2602":  ("2602",  lambda r: SMU2600(r, "A")),
-    "2602A": ("2602A", lambda r: SMU2600(r, "A")),
-    "2614B": ("2614B", lambda r: SMU2600(r, "A")),
-    "2614":  ("2614B", lambda r: SMU2600(r, "A")),
-}
+# 2600-series models that have two independent channels (A and B).
+# Both are registered in smu_map so the user can assign them separately
+# to drain / gate / source in the sweep panel.
+_DUAL_CHANNEL_MODELS = frozenset(
+    ["2602", "2602A", "2602B", "2604", "2611", "2612", "2612B",
+     "2614", "2614B", "2634", "2634B", "2636", "2636B"]
+)
 
 
 class _ScanWorker(QThread):
@@ -405,29 +404,36 @@ class InstrumentPanel(QWidget):
             log.debug("IDN for %s: %r", resource_string, real_idn)
 
             model_hint = manual_model_hint or self._guess_model(real_idn)
-            driver = self._make_driver(res, model_hint, resource_string)
+            base_id    = self._label_for(resource_string, model_hint, real_idn)
+            drivers    = self._make_drivers(res, model_hint)
 
-            # reset() initialises the instrument to a known state.  If it
-            # fails, log a warning but still register the driver — a partial
-            # reset is better than refusing to connect.
-            try:
-                driver.reset()
-            except Exception as exc:
-                log.warning("reset() failed for %s: %s — continuing", resource_string, exc)
-
-            if row.remote_sense:
+            registered: list[str] = []
+            for suffix, driver in drivers:
                 try:
-                    driver.set_sense_mode(True)
+                    driver.reset()
                 except Exception as exc:
-                    log.warning("set_sense_mode failed: %s", exc)
+                    log.warning(
+                        "reset() failed for %s%s: %s — continuing",
+                        base_id, suffix, exc,
+                    )
+                if row.remote_sense:
+                    try:
+                        driver.set_sense_mode(True)
+                    except Exception as exc:
+                        log.warning("set_sense_mode failed for %s%s: %s", base_id, suffix, exc)
+                instr_id = base_id + suffix
+                self._smu_map[instr_id] = driver
+                registered.append(instr_id)
 
-            instr_id = self._label_for(resource_string, model_hint, real_idn)
-            self._smu_map[instr_id] = driver
+            # Update the row label to reflect the registered entries.
+            display_id = (
+                f"{base_id} (A+B)" if len(registered) > 1 else registered[0]
+            )
             row.set_connected(True)
-            row.friendly = instr_id
-            row._name_lbl.setText(instr_id)
-            log.info("Connected: %s  IDN=%r", instr_id, real_idn)
-            self._status_lbl.setText(f"Connected: {instr_id}")
+            row.friendly = display_id
+            row._name_lbl.setText(display_id)
+            log.info("Connected: %s  IDN=%r  channels=%s", display_id, real_idn, registered)
+            self._status_lbl.setText(f"Connected: {display_id}")
         except Exception as exc:
             row.set_error()
             self._status_lbl.setText(f"Error: {exc}")
@@ -481,11 +487,30 @@ class InstrumentPanel(QWidget):
         return "2400"
 
     @staticmethod
-    def _make_driver(resource, model_hint: str, resource_string: str) -> SMUBase:
-        m = model_hint.upper()
-        if "2614" in m or "2602" in m:
-            return SMU2600(resource, channel="A")
-        return SMU2400(resource)
+    def _make_drivers(resource, model_hint: str) -> list[tuple[str, SMUBase]]:
+        """Return [(label_suffix, driver), ...].
+
+        2600-series dual-channel instruments (2602, 2614, etc.) produce two
+        entries — one for channel A and one for channel B — so the user can
+        assign them independently in the sweep panel (e.g. Ch.A → Drain,
+        Ch.B → Gate).  Single-channel instruments return a single entry with
+        an empty suffix.
+        """
+        m = model_hint.upper().replace(" ", "")
+        # Check against the dual-channel set by looking for any key in the hint
+        is_dual = any(key in m for key in _DUAL_CHANNEL_MODELS)
+        if is_dual:
+            return [
+                (" Ch.A", SMU2600(resource, channel="A")),
+                (" Ch.B", SMU2600(resource, channel="B")),
+            ]
+        if "2614" in m or "2602" in m or "2612" in m or "2636" in m:
+            # Fallback if model hint wasn't matched above
+            return [
+                (" Ch.A", SMU2600(resource, channel="A")),
+                (" Ch.B", SMU2600(resource, channel="B")),
+            ]
+        return [("", SMU2400(resource))]
 
     @staticmethod
     def _label_for(resource_string: str, model_hint: str, idn: str) -> str:

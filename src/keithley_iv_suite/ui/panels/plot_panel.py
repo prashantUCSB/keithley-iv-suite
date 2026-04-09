@@ -29,19 +29,37 @@ _SI_PREFIXES: list[tuple[float, str]] = [
     (1.0, ""), (1e-3, "k"),
 ]
 
+# Axis config: (x_html, x_base_unit, y_html, y_base_unit)
+# x_html / y_html are rendered by pyqtgraph as HTML — subscripts work.
+# pyqtgraph does not support LaTeX natively; HTML <sub>/<i> achieves
+# the same visual result for standard instrument axis labels.
 _AXIS_CONFIG: dict[MeasurementType, tuple[str, str, str, str]] = {
-    MeasurementType.NMOS_TRANSFER: ("Vgs",  "V", "Id",  "A"),
-    MeasurementType.NMOS_OUTPUT:   ("Vds",  "V", "Id",  "A"),
-    MeasurementType.RESISTOR_IV:   ("V",    "V", "I",   "A"),
-    MeasurementType.VAN_DER_PAUW:  ("I",    "A", "V",   "V"),
-    MeasurementType.HALL_BAR:      ("I",    "A", "V",   "V"),
-    MeasurementType.GENERIC_4PORT: ("V_T1", "V", "I_T1","A"),
+    MeasurementType.NMOS_TRANSFER: (
+        "<i>V</i><sub>gs</sub>", "V",
+        "<i>I</i><sub>d</sub>",  "A",
+    ),
+    MeasurementType.NMOS_OUTPUT: (
+        "<i>V</i><sub>ds</sub>", "V",
+        "<i>I</i><sub>d</sub>",  "A",
+    ),
+    MeasurementType.RESISTOR_IV: (
+        "<i>V</i>", "V",
+        "<i>I</i>", "A",
+    ),
+    MeasurementType.VAN_DER_PAUW: (
+        "<i>I</i>",             "A",
+        "<i>V</i><sub>sense</sub>", "V",
+    ),
+    MeasurementType.HALL_BAR: (
+        "<i>I</i>",             "A",
+        "<i>V</i>",             "V",
+    ),
+    MeasurementType.GENERIC_4PORT: (
+        "<i>V</i><sub>T1</sub>", "V",
+        "<i>I</i><sub>T1</sub>", "A",
+    ),
 }
 
-# Display labels for each curve_id (Hall bar emits 2 curves)
-_CURVE_LABELS: dict[MeasurementType, dict[int, str]] = {
-    MeasurementType.HALL_BAR: {0: "V_long", 1: "V_Hall"},
-}
 
 _LINE_STYLES = {
     "Solid":   Qt.PenStyle.SolidLine,
@@ -165,6 +183,8 @@ class PlotPanel(QWidget):
         self._y_base = "A"
 
         self._selected_cid: int | None = None
+        self._curve_labels: dict[int, str] = {}   # cid → legend/name string
+        self._legend = None                        # pg.LegendItem or None
 
         # Overlay state — tracks which curve IDs belong to the running sweep
         # so fit lines and axis resets only apply to the current run.
@@ -368,16 +388,21 @@ class PlotPanel(QWidget):
 
     def _on_log_toggled(self, checked: bool):
         self._pw.setLogMode(y=checked)
+        kw = {"color": theme.TEXT_SECONDARY}
         if checked:
-            self._pw.setLabel("left", f"|{self._y_name}| (A)")
+            self._pw.setLabel("left", f"|{self._y_name}| (A)", **kw)
         else:
-            self._pw.setLabel("left", f"{self._y_name} ({self._y_unit})")
+            self._pw.setLabel("left", f"{self._y_name} ({self._y_unit})", **kw)
         self._dirty = True
         self._flush_paint()
 
     def _update_x_label(self):
         suffix = " (forced)" if self._view_mode == self._MODE_FORCED else " (sensed)"
-        self._pw.setLabel("bottom", f"{self._x_name}{suffix} ({self._x_unit})")
+        self._pw.setLabel(
+            "bottom",
+            f"{self._x_name}{suffix} ({self._x_unit})",
+            **{"color": theme.TEXT_SECONDARY},
+        )
 
     def _active_data(self) -> dict[int, tuple[list, list]]:
         return (self._data_forced if self._view_mode == self._MODE_FORCED
@@ -421,7 +446,45 @@ class PlotPanel(QWidget):
             size="11pt",
         )
         self._update_x_label()
-        self._pw.setLabel("left", f"{y_name} ({self._y_unit})")
+        self._pw.setLabel(
+            "left",
+            f"{y_name} ({self._y_unit})",
+            **{"color": theme.TEXT_SECONDARY},
+        )
+
+        # ── Per-curve labels for legend ──────────────────────────────
+        # Labels are stored by absolute cid (offset already applied above).
+        self._curve_labels = {}
+        if isinstance(config, OutputConfig):
+            for idx, vgs in enumerate(config.vgs_list_values):
+                cid = idx + self._curve_id_offset
+                self._curve_labels[cid] = (
+                    f"<i>V</i><sub>gs</sub> = {vgs:.3g} V"
+                )
+        elif config.measurement_type == MeasurementType.HALL_BAR:
+            base = self._curve_id_offset
+            self._curve_labels[base]     = "<i>V</i><sub>long</sub>"
+            self._curve_labels[base + 1] = "<i>V</i><sub>Hall</sub>"
+
+        # ── Legend ───────────────────────────────────────────────────
+        # Create a legend only when this measurement produces named curves.
+        # In overlay mode the old legend is still present; adding another
+        # creates a duplicate — remove it first.
+        needs_legend = bool(self._curve_labels)
+        if needs_legend:
+            if self._legend is not None:
+                try:
+                    self._pw.removeItem(self._legend)
+                except Exception:
+                    pass
+            self._legend = self._pw.addLegend(
+                offset=(10, 10),
+                brush=pg.mkBrush(color=(20, 20, 20, 210)),
+                pen=pg.mkPen(theme.BORDER),
+            )
+        elif not overlay_mode:
+            # Non-overlay, no labels needed: ensure legend is gone
+            self._legend = None
 
         # Lock axes to sweep range — prevents pyqtgraph autoRange scroll loop
         # during the live 25 Hz setData calls.  autoRange() is called once in
@@ -470,6 +533,7 @@ class PlotPanel(QWidget):
     def _make_curve(self, cid: int, style: CurveStyle) -> pg.PlotDataItem:
         pen = self._make_pen(style)
         sym = _MARKERS.get(style.marker)
+        name = self._curve_labels.get(cid)   # None → not shown in legend
         c = self._pw.plot(
             [], [],
             pen=pen,
@@ -477,6 +541,7 @@ class PlotPanel(QWidget):
             symbolSize=style.marker_size,
             symbolBrush=pg.mkBrush(style.color) if sym else None,
             symbolPen=None,
+            name=name,
         )
         c.sigClicked.connect(lambda _c, _pts, _id=cid: self._on_curve_clicked(_id))
         return c
@@ -552,6 +617,8 @@ class PlotPanel(QWidget):
         self._overlay_items.clear()
         self._current_sweep_cids.clear()
         self._curve_id_offset = 0
+        self._curve_labels.clear()
+        self._legend = None   # pw.clear() already removed the LegendItem
         self._received_pts = 0
         self._y_max_abs    = 0.0
         self._x_scale = 1.0
