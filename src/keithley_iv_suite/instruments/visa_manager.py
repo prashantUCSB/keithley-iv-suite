@@ -25,9 +25,18 @@ _KEITHLEY_USB_PRODUCTS: dict[int, str] = {
 }
 
 # Pre-compiled pattern for USB VISA resource strings:
-# USB[board]::0x<vendor>::0x<product>::<serial>::INSTR
+# USB[board]::0x<vendor>::0x<product>::<serial>[::interface]::INSTR
 _USB_RE = re.compile(
     r"USB\d*::0x([0-9A-Fa-f]+)::0x([0-9A-Fa-f]+)::",
+    re.IGNORECASE,
+)
+# Captures (vendor, product, serial) — used for deduplication.
+# NI-VISA lists the same USB device under two strings:
+#   USB0::0x05E6::0x2614::4070815::INSTR          (no interface index)
+#   USB0::0x05E6::0x2614::4070815::0::INSTR        (with interface index)
+# Both strings share the same serial, so we keep only the first occurrence.
+_USB_SERIAL_RE = re.compile(
+    r"USB\d*::0x([0-9A-Fa-f]+)::0x([0-9A-Fa-f]+)::([^:]+)",
     re.IGNORECASE,
 )
 
@@ -99,6 +108,23 @@ class VISAManager:
         skip = skip or set()
         all_resources = self.list_resources()
         log.info("VISA scan: probing %d resource(s): %s", len(all_resources), all_resources)
+
+        # Deduplicate USB resources by (vendor, product, serial).  NI-VISA
+        # enumerates the same physical device under two resource strings —
+        # with and without the interface index suffix.  Keep the first string
+        # seen for each unique (vendor, product, serial) tuple.
+        seen_usb_keys: set[tuple] = set()
+        deduped: list[str] = []
+        for rstr in all_resources:
+            key = self._usb_device_key(rstr)
+            if key is not None:
+                if key in seen_usb_keys:
+                    log.debug("Skipping duplicate USB resource (same serial): %s", rstr)
+                    continue
+                seen_usb_keys.add(key)
+            deduped.append(rstr)
+        all_resources = deduped
+
         results: list[dict] = []
         for rstr in all_resources:
             # Skip serial ports — they are never Keithley SMUs and always
@@ -223,6 +249,14 @@ class VISAManager:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _usb_device_key(rstr: str) -> "tuple[str, str, str] | None":
+        """Return (vendor, product, serial) for a USB resource string, else None."""
+        m = _USB_SERIAL_RE.match(rstr)
+        if m:
+            return (m.group(1).upper(), m.group(2).upper(), m.group(3).upper())
+        return None
 
     @staticmethod
     def _parse_resource_string(rstr: str) -> dict:

@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QButtonGroup, QCheckBox, QColorDialog, QComboBox, QFileDialog,
-    QGroupBox, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
+    QFrame, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
     QPushButton, QRadioButton, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -157,6 +157,13 @@ class PlotPanel(QWidget):
 
         self._selected_cid: int | None = None
 
+        # Overlay state — tracks which curve IDs belong to the running sweep
+        # so fit lines and axis resets only apply to the current run.
+        self._curve_id_offset: int = 0
+        self._current_sweep_cids: set[int] = set()
+        self._overlay_items: list = []        # fit line + annotation items
+        self._overlay_line_color: str = theme.AMBER
+
         # 25 Hz paint throttle — prevents UI freeze during fast sweeps
         self._dirty = False
         self._paint_timer = QTimer(self)
@@ -254,8 +261,10 @@ class PlotPanel(QWidget):
         sl.setSpacing(6)
         sl.setContentsMargins(6, 4, 6, 4)
 
-        self._color_btn = QPushButton("  Color  ")
-        self._color_btn.setFixedHeight(24)
+        # Curve color swatch — shows the selected curve's color
+        self._color_btn = QPushButton()
+        self._color_btn.setFixedSize(56, 24)
+        self._color_btn.setToolTip("Change selected curve color")
         self._color_btn.clicked.connect(self._pick_color)
         sl.addWidget(self._color_btn)
 
@@ -275,11 +284,50 @@ class PlotPanel(QWidget):
 
         sl.addWidget(QLabel("Size:"))
         self._marker_size = QSpinBox()
-        self._marker_size.setRange(1, 20)
+        self._marker_size.setRange(1, 30)
         self._marker_size.setValue(5)
-        self._marker_size.setFixedWidth(50)
+        self._marker_size.setMinimumWidth(52)   # fits "30 ▲▼" without clipping
         self._marker_size.valueChanged.connect(self._apply_style_size)
         sl.addWidget(self._marker_size)
+
+        # ── separator ─────────────────────────────────────────────────
+        _sep1 = QFrame()
+        _sep1.setFrameShape(QFrame.Shape.VLine)
+        _sep1.setFrameShadow(QFrame.Shadow.Sunken)
+        sl.addWidget(_sep1)
+
+        # ── Fit line controls ──────────────────────────────────────────
+        sl.addWidget(QLabel("Fit:"))
+        self._fit_color_btn = QPushButton()
+        self._fit_color_btn.setFixedSize(24, 24)
+        self._fit_color_btn.setToolTip("Fit line color (dashed overlay)")
+        self._fit_color_btn.setStyleSheet(
+            f"background:{theme.AMBER}; border-radius:3px;"
+            f" border:1px solid {theme.BORDER};"
+        )
+        self._fit_color_btn.clicked.connect(self._pick_overlay_color)
+        sl.addWidget(self._fit_color_btn)
+
+        self._fit_visible_chk = QCheckBox("Show")
+        self._fit_visible_chk.setChecked(True)
+        self._fit_visible_chk.setToolTip("Show / hide fit line and annotations")
+        self._fit_visible_chk.toggled.connect(self._on_fit_visible_toggled)
+        sl.addWidget(self._fit_visible_chk)
+
+        # ── separator ─────────────────────────────────────────────────
+        _sep2 = QFrame()
+        _sep2.setFrameShape(QFrame.Shape.VLine)
+        _sep2.setFrameShadow(QFrame.Shadow.Sunken)
+        sl.addWidget(_sep2)
+
+        # ── Overlay mode ───────────────────────────────────────────────
+        self._keep_overlay_chk = QCheckBox("Overlay runs")
+        self._keep_overlay_chk.setToolTip(
+            "Keep previous sweeps on the plot — each run gets a new color.\n"
+            "Works with Resistor IV and Transfer sweeps.\n"
+            "Clear the plot manually when done."
+        )
+        sl.addWidget(self._keep_overlay_chk)
 
         sl.addStretch()
         root.addWidget(style_box)
@@ -329,7 +377,20 @@ class PlotPanel(QWidget):
     # ── Public API ────────────────────────────────────────────────────────
 
     def prepare(self, config: SweepConfig, total_points: int = 0):
-        self.clear()
+        overlay_mode = self._keep_overlay_chk.isChecked()
+        if overlay_mode:
+            # Preserve previous curves; advance the ID offset so new curves
+            # use the next slot in PLOT_COLORS without overwriting old data.
+            self._paint_timer.stop()
+            self._dirty = False
+            self._curve_id_offset = (max(self._curves.keys()) + 1) if self._curves else 0
+            self._current_sweep_cids = set()
+            self._received_pts = 0
+        else:
+            self.clear()
+            self._curve_id_offset = 0
+            self._current_sweep_cids = set()
+
         self._config = config
         self._total_pts = total_points
 
@@ -356,13 +417,14 @@ class PlotPanel(QWidget):
         # Lock axes to sweep range — prevents pyqtgraph autoRange scroll loop
         # during the live 25 Hz setData calls.  autoRange() is called once in
         # mark_done() for a final fit after the sweep completes.
-        vmin, vmax = self._config_v_range(config)
-        x_lo = min(vmin, vmax) * self._x_scale
-        x_hi = max(vmin, vmax) * self._x_scale
-        i_range = y_est * self._y_scale
         self._pw.disableAutoRange()
-        self._pw.setXRange(x_lo, x_hi, padding=0.08)
-        self._pw.setYRange(-i_range, i_range, padding=0.10)
+        if not overlay_mode:
+            vmin, vmax = self._config_v_range(config)
+            x_lo = min(vmin, vmax) * self._x_scale
+            x_hi = max(vmin, vmax) * self._x_scale
+            i_range = y_est * self._y_scale
+            self._pw.setXRange(x_lo, x_hi, padding=0.08)
+            self._pw.setYRange(-i_range, i_range, padding=0.10)
 
         if total_points > 0:
             self._progress.setRange(0, total_points)
@@ -373,19 +435,23 @@ class PlotPanel(QWidget):
     def append_point(self, v_forced: float, i_meas: float, v_sensed: float,
                      curve_id: int = 0):
         """Store raw SI point; repaints are batched at 25 Hz."""
-        if curve_id not in self._data_forced:
-            self._data_forced[curve_id] = ([], [])
-            self._data_sensed[curve_id] = ([], [])
-            style = CurveStyle(
-                color=theme.PLOT_COLORS[curve_id % len(theme.PLOT_COLORS)]
-            )
-            self._styles[curve_id] = style
-            self._curves[curve_id] = self._make_curve(curve_id, style)
+        # Offset curve_id so overlay runs use distinct colors and storage slots.
+        cid = curve_id + self._curve_id_offset
+        self._current_sweep_cids.add(cid)
 
-        self._data_forced[curve_id][0].append(v_forced)
-        self._data_forced[curve_id][1].append(i_meas)
-        self._data_sensed[curve_id][0].append(v_sensed)
-        self._data_sensed[curve_id][1].append(i_meas)
+        if cid not in self._data_forced:
+            self._data_forced[cid] = ([], [])
+            self._data_sensed[cid] = ([], [])
+            style = CurveStyle(
+                color=theme.PLOT_COLORS[cid % len(theme.PLOT_COLORS)]
+            )
+            self._styles[cid] = style
+            self._curves[cid] = self._make_curve(cid, style)
+
+        self._data_forced[cid][0].append(v_forced)
+        self._data_forced[cid][1].append(i_meas)
+        self._data_sensed[cid][0].append(v_sensed)
+        self._data_sensed[cid][1].append(i_meas)
 
         self._dirty = True
         self._tick()
@@ -474,6 +540,9 @@ class PlotPanel(QWidget):
         self._data_forced.clear()
         self._data_sensed.clear()
         self._styles.clear()
+        self._overlay_items.clear()
+        self._current_sweep_cids.clear()
+        self._curve_id_offset = 0
         self._received_pts = 0
         self._y_max_abs    = 0.0
         self._x_scale = 1.0
@@ -513,8 +582,12 @@ class PlotPanel(QWidget):
 
     def _overlay_resistor(self):
         active = self._active_data()
-        v_all  = np.concatenate([np.array(xs) for xs, _ in active.values()])
-        i_all  = np.concatenate([np.array(ys) for _, ys in active.values()])
+        # Fit only the current sweep's data so each overlaid run gets its
+        # own fit line; old runs are not re-fitted.
+        cur = {cid: d for cid, d in active.items()
+               if cid in self._current_sweep_cids} or active
+        v_all = np.concatenate([np.array(xs) for xs, _ in cur.values()])
+        i_all = np.concatenate([np.array(ys) for _, ys in cur.values()])
         if len(v_all) < 2:
             return
         m, b = np.polyfit(v_all, i_all, 1)
@@ -526,14 +599,16 @@ class PlotPanel(QWidget):
         ss_tot = float(np.sum((i_all - i_all.mean()) ** 2))
         r_sq   = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
-        # Fit line
+        # Fit line — color follows _overlay_line_color so user can change it
         pad   = (v_all.max() - v_all.min()) * 0.15
         v_ext = np.linspace(v_all.min() - pad, v_all.max() + pad, 200)
-        self._pw.plot(
+        fit_line = self._pw.plot(
             v_ext * self._x_scale,
             (m * v_ext + b) * self._y_scale,
-            pen=pg.mkPen(theme.AMBER, width=2, style=Qt.PenStyle.DashLine),
+            pen=pg.mkPen(self._overlay_line_color, width=2,
+                         style=Qt.PenStyle.DashLine),
         )
+        self._overlay_items.append(fit_line)
 
         # Annotation
         ann = DraggableText(
@@ -541,8 +616,14 @@ class PlotPanel(QWidget):
             anchor=(0.0, 1.0),
         )
         self._pw.addItem(ann)
+        self._overlay_items.append(ann)
         ann.setPos(float(v_ext[10]) * self._x_scale,
                    float((m * v_ext + b).max()) * self._y_scale)
+
+        # Apply current visibility setting
+        visible = self._fit_visible_chk.isChecked()
+        fit_line.setVisible(visible)
+        ann.setVisible(visible)
 
         self._eq_lbl.setText(
             f"R = {_fmt_si(R, 'Ω')}     R² = {r_sq:.6f}"
@@ -551,11 +632,13 @@ class PlotPanel(QWidget):
         self.params_updated.emit({"R": R, "R_sq": r_sq})
 
     def _overlay_transfer(self):
-        # Always use forced-V for derivative calculations
-        if 0 not in self._data_forced:
+        # In overlay mode the primary curve for this sweep is at _curve_id_offset.
+        # Fall back to cid=0 for non-overlay mode.
+        cid = min(self._current_sweep_cids) if self._current_sweep_cids else 0
+        if cid not in self._data_forced:
             return
-        vgs_f = np.array(self._data_forced[0][0])
-        id_f  = np.array(self._data_forced[0][1])
+        vgs_f = np.array(self._data_forced[cid][0])
+        id_f  = np.array(self._data_forced[cid][1])
         if len(vgs_f) < 4:
             return
 
@@ -574,15 +657,20 @@ class PlotPanel(QWidget):
         except Exception:
             pass
 
-        # Vth vertical line
+        visible = self._fit_visible_chk.isChecked()
+
+        # Vth vertical line — create as variable so we can track it
         if not np.isnan(Vth):
-            self._pw.addItem(pg.InfiniteLine(
+            vth_line = pg.InfiniteLine(
                 pos=Vth * self._x_scale, angle=90,
                 pen=pg.mkPen(theme.ERROR, width=1.5, style=Qt.PenStyle.DashLine),
                 label=f"Vth ≈ {Vth:.3f} V",
                 labelOpts={"color": theme.ERROR, "position": 0.85,
                            "font": QFont("monospace", 8)},
-            ))
+            )
+            self._pw.addItem(vth_line)
+            self._overlay_items.append(vth_line)
+            vth_line.setVisible(visible)
 
         # Annotation
         body = f"gm_pk = {_fmt_si(gm_pk, 'S')}<br>at Vgs = {vgs_gm:.3g} V"
@@ -590,10 +678,12 @@ class PlotPanel(QWidget):
             body += f"<br>Vth ≈ {Vth:.3f} V"
         ann = DraggableText(html=_annot(body), anchor=(0.0, 1.0))
         self._pw.addItem(ann)
-        # Use the display-mode data for annotation position
+        self._overlay_items.append(ann)
+        ann.setVisible(visible)
+        # Position annotation using display-mode data for this sweep's curve
         active = self._active_data()
-        if 0 in active:
-            vgs_d, id_d = active[0]
+        if cid in active:
+            vgs_d, id_d = active[cid]
             ann.setPos(float(np.array(vgs_d)[0]) * self._x_scale,
                        float(np.array(id_d).max()) * self._y_scale)
 
@@ -619,12 +709,17 @@ class PlotPanel(QWidget):
 
     def _update_toolbar_from_selection(self):
         if self._selected_cid is None or self._selected_cid not in self._styles:
-            self._color_btn.setStyleSheet("")
+            self._color_btn.setText("Color")
+            self._color_btn.setStyleSheet(
+                f"border:1px solid {theme.BORDER}; border-radius:3px;"
+            )
             return
         s = self._styles[self._selected_cid]
+        text_color = "#000" if QColor(s.color).lightness() > 128 else "#fff"
+        self._color_btn.setText("Color")
         self._color_btn.setStyleSheet(
-            f"background:{s.color};"
-            f" color:{'#000' if QColor(s.color).lightness() > 128 else '#fff'};"
+            f"background:{s.color}; color:{text_color};"
+            f" border:1px solid {theme.BORDER}; border-radius:3px;"
         )
         self._line_combo.blockSignals(True)
         self._line_combo.setCurrentText(s.line_style)
@@ -645,6 +740,32 @@ class PlotPanel(QWidget):
             style.color = color.name()
             self._apply_style_to_curve(self._selected_cid)
             self._update_toolbar_from_selection()
+
+    def _pick_overlay_color(self):
+        """Change the color of all fit lines / overlay annotations."""
+        color = QColorDialog.getColor(
+            QColor(self._overlay_line_color), self, "Fit Line Color"
+        )
+        if not color.isValid():
+            return
+        self._overlay_line_color = color.name()
+        self._fit_color_btn.setStyleSheet(
+            f"background:{self._overlay_line_color}; border-radius:3px;"
+            f" border:1px solid {theme.BORDER};"
+        )
+        # Recolor any PlotDataItem fit lines already on the plot.
+        # InfiniteLine (Vth marker) keeps its theme.ERROR color.
+        new_pen = pg.mkPen(
+            self._overlay_line_color, width=2, style=Qt.PenStyle.DashLine
+        )
+        for item in self._overlay_items:
+            if isinstance(item, pg.PlotDataItem):
+                item.setPen(new_pen)
+
+    def _on_fit_visible_toggled(self, checked: bool):
+        """Show or hide all fit lines and annotations."""
+        for item in self._overlay_items:
+            item.setVisible(checked)
 
     def _apply_style_line(self, text: str):
         if self._selected_cid is None: return

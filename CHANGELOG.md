@@ -9,6 +9,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.0] — 2026-04-09
+
+### Fixed
+
+- **VISA duplicate instruments** — NI-VISA enumerates the same USB device
+  under two resource strings (with and without the interface-index suffix,
+  e.g. `::INSTR` vs `::0::INSTR`).  A deduplication step now extracts the
+  `(vendor, product, serial)` tuple from each USB resource string before
+  probing and skips any second occurrence with the same serial.
+  ([visa_manager.py](src/keithley_iv_suite/instruments/visa_manager.py))
+
+### Changed
+
+- **Marker size spinbox** — `setFixedWidth(50)` replaced with
+  `setMinimumWidth(52)` and range extended to 1–30 so two-digit values are
+  no longer clipped by the widget boundary.
+
+- **Fit line color + show/hide** — a color swatch button and "Show" checkbox
+  for the fit line (dashed overlay) are now in the style toolbar.  The color
+  button opens a color picker and immediately recolors all `PlotDataItem` fit
+  lines on the current plot.  The "Show" checkbox toggles visibility of all
+  overlay items (fit lines, Vth marker, text annotations) in one click.
+
+- **Curve color swatch** — the "Color" button now renders its background in
+  the selected curve's current color so the active color is always visible
+  without opening the dialog.
+
+- **Overlay runs** — a new "Overlay runs" checkbox in the style toolbar.
+  When checked, `prepare()` skips `clear()` and advances the curve-ID offset
+  so each new sweep gets the next color in the palette without overwriting
+  previous data.  Each overlaid run produces its own independent fit line.
+  When unchecked (default), the plot clears on each new sweep as before.
+  Applies to Resistor IV and Transfer sweeps.  Use the "Clear" button to
+  reset the plot when finished overlaying.
+
+---
+
 ## [1.4.0] — 2026-04-09
 
 ### Fixed
