@@ -9,6 +9,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.0] — 2026-04-09
+
+### Changed
+
+- **Single live PlotWidget** — replaced the three-panel side-by-side layout
+  with one `PlotWidget` that fills all available space.  Multiple panels were
+  the root cause of the post-sweep GUI freeze: each panel triggered its own
+  repaint chain and the combined cost blocked the main thread.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Forced V / Sensed V radio toggle** — two radio buttons in the header row
+  select which voltage column drives the X axis.  Both datasets are always
+  accumulated; toggling during or after a sweep redraws immediately from the
+  stored data.  Default is Forced V; switch to Sensed V for 4-wire (Kelvin)
+  measurements where the two diverge.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Log |I| checkbox** — replaces the old tab-based log view.  Toggling live
+  switches pyqtgraph's Y log mode and redraws from stored data; no data loss.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Lightweight post-sweep overlay** — `_add_overlay()` replaces the old
+  `_compute_analysis()`.  It adds at most two items to the existing plot (a
+  dashed fit line for resistor sweeps, a Vth `InfiniteLine` for transfer
+  sweeps) instead of rebuilding separate analysis panels.  Output family
+  curves need no annotation.  The main thread is never blocked.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+### Removed
+
+- Separate analysis panels (Residuals / gm / gd plot widgets) — primary users
+  want raw IV curves; derived quantities can be computed offline from the CSV.
+
+---
+
 ## [1.2.1] — 2026-04-06
 
 ### Fixed
