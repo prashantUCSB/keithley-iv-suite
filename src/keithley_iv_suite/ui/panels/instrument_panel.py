@@ -197,8 +197,8 @@ class InstrumentPanel(QWidget):
         self._resources: dict[str, dict] = {}
         self._scan_worker: Optional[_ScanWorker] = None
         self._build_ui()
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setFixedWidth(300)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.setMinimumWidth(240)
 
     # ------------------------------------------------------------------
     # UI
@@ -267,6 +267,10 @@ class InstrumentPanel(QWidget):
         self._scan_btn.setEnabled(False)
         self._scan_btn.setText("Scanning…")
         self._status_lbl.setText("Scanning VISA bus…")
+        # Disable connect buttons on existing rows to prevent a race condition
+        # between the scan's open_resource calls and a manual connect attempt.
+        for row in self._rows.values():
+            row.setEnabled(False)
         self._scan_worker = _ScanWorker(self._vm)
         self._scan_worker.done.connect(self._on_scan_done)
         self._scan_worker.start()
@@ -274,6 +278,8 @@ class InstrumentPanel(QWidget):
     def _on_scan_done(self, results: list):
         self._scan_btn.setEnabled(True)
         self._scan_btn.setText("⟳  Scan VISA")
+        for row in self._rows.values():
+            row.setEnabled(True)
         new_count = 0
         for info in results:
             rstr = info["resource_string"]
@@ -331,27 +337,64 @@ class InstrumentPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _connect_instrument(self, resource_string: str):
+        import time
+        import pyvisa.errors
+
         row = self._rows.get(resource_string)
         if not row or not row.is_smu:
             return
         info = self._resources.get(resource_string, {})
         manual_model_hint = info.get("model_hint", "")
 
+        row.setEnabled(False)
+        self._status_lbl.setText(f"Connecting to {resource_string}…")
+
         try:
-            res = self._vm.open_resource(resource_string)
-            try:
-                real_idn = res.query("*IDN?").strip()
-            except Exception:
-                real_idn = ""
+            # Retry opening the resource once — handles the case where the
+            # instrument is momentarily busy after a prior scan or disconnect.
+            res = None
+            for attempt in range(2):
+                try:
+                    res = self._vm.open_resource(resource_string)
+                    break
+                except pyvisa.errors.VisaIOError as exc:
+                    if attempt == 0:
+                        log.warning("open_resource failed (attempt 1), retrying: %s", exc)
+                        time.sleep(0.5)
+                    else:
+                        raise
+
+            # Query *IDN? — retry once on timeout (instrument may be processing
+            # a previous command from the scan).
+            real_idn = ""
+            for attempt in range(2):
+                try:
+                    real_idn = res.query("*IDN?").strip()
+                    break
+                except Exception as exc:
+                    if attempt == 0:
+                        log.warning("IDN query failed (attempt 1), retrying: %s", exc)
+                        time.sleep(0.3)
+                    else:
+                        log.warning("IDN query gave no response for %s; continuing anyway", resource_string)
             log.debug("IDN for %s: %r", resource_string, real_idn)
 
             model_hint = manual_model_hint or self._guess_model(real_idn)
             driver = self._make_driver(res, model_hint, resource_string)
-            driver.reset()
 
-            # Apply current sense mode
+            # reset() initialises the instrument to a known state.  If it
+            # fails, log a warning but still register the driver — a partial
+            # reset is better than refusing to connect.
+            try:
+                driver.reset()
+            except Exception as exc:
+                log.warning("reset() failed for %s: %s — continuing", resource_string, exc)
+
             if row.remote_sense:
-                driver.set_sense_mode(True)
+                try:
+                    driver.set_sense_mode(True)
+                except Exception as exc:
+                    log.warning("set_sense_mode failed: %s", exc)
 
             instr_id = self._label_for(resource_string, model_hint, real_idn)
             self._smu_map[instr_id] = driver
@@ -364,7 +407,10 @@ class InstrumentPanel(QWidget):
             row.set_error()
             self._status_lbl.setText(f"Error: {exc}")
             log.error("Connect failed for %s: %s", resource_string, exc)
+            row.setEnabled(True)
             return
+        finally:
+            row.setEnabled(True)
 
         self.instruments_changed.emit(dict(self._smu_map))
 

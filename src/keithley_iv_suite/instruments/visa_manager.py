@@ -89,31 +89,49 @@ class VISAManager:
         (stale NI-MAX aliases, virtual COM ports, USBTMC artefacts, etc.).
         The user can still add them manually via the Manual Entry box.
         """
+        all_resources = self.list_resources()
+        log.info("VISA scan: probing %d resource(s): %s", len(all_resources), all_resources)
         results: list[dict] = []
-        for rstr in self.list_resources():
+        for rstr in all_resources:
             info = self._parse_resource_string(rstr)
+            idn = ""
             try:
-                res = self._rm.open_resource(rstr, open_timeout=2000)  # type: ignore[union-attr]
-                res.timeout = 2000
+                res = self._rm.open_resource(  # type: ignore[union-attr]
+                    rstr, open_timeout=3000
+                )
+                res.timeout = 3000
                 try:
+                    # For GPIB, clear any pending I/O before querying to
+                    # avoid receiving a stale response from a prior session.
+                    if rstr.upper().startswith("GPIB"):
+                        try:
+                            res.clear()
+                        except Exception:
+                            pass
                     idn = res.query("*IDN?").strip()
-                except Exception:
+                except pyvisa.errors.VisaIOError as exc:
+                    log.warning("IDN query timed out for %s: %s", rstr, exc)
+                    idn = ""
+                except Exception as exc:
+                    log.debug("IDN query failed for %s: %s", rstr, exc)
                     idn = ""
                 finally:
                     try:
                         res.close()
                     except Exception:
                         pass
-            except Exception:
-                # Cannot open — phantom entry; skip entirely
-                log.debug("Skipping unreachable resource: %s", rstr)
+            except pyvisa.errors.VisaIOError as exc:
+                log.warning("Cannot open resource %s: %s", rstr, exc)
+                continue
+            except Exception as exc:
+                log.debug("Skipping unreachable resource %s: %s", rstr, exc)
                 continue
 
             if not idn:
-                # Opened but silent — skip; user can add manually if needed
                 log.debug("Skipping resource with no IDN response: %s", rstr)
                 continue
 
+            log.info("Found: %s  IDN=%r", rstr, idn)
             info["idn"] = idn
             info["friendly"] = self._friendly_name(rstr, idn)
             # Flag whether this looks like a Keithley SMU
@@ -124,6 +142,7 @@ class VISAManager:
                                             "2614", "2634", "2636", "6430")
             )
             results.append(info)
+        log.info("VISA scan complete: %d instrument(s) found", len(results))
         return results
 
     def open_resource(
@@ -133,7 +152,9 @@ class VISAManager:
         read_termination: str = "\n",
         write_termination: str = "\n",
     ) -> pyvisa.resources.Resource:
-        res = self._rm.open_resource(resource_string)  # type: ignore[union-attr]
+        res = self._rm.open_resource(  # type: ignore[union-attr]
+            resource_string, open_timeout=timeout_ms
+        )
         res.timeout = timeout_ms
         res.read_termination = read_termination
         res.write_termination = write_termination

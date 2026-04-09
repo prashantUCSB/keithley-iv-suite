@@ -353,6 +353,17 @@ class PlotPanel(QWidget):
         self._update_x_label()
         self._pw.setLabel("left", f"{y_name} ({self._y_unit})")
 
+        # Lock axes to sweep range — prevents pyqtgraph autoRange scroll loop
+        # during the live 25 Hz setData calls.  autoRange() is called once in
+        # mark_done() for a final fit after the sweep completes.
+        vmin, vmax = self._config_v_range(config)
+        x_lo = min(vmin, vmax) * self._x_scale
+        x_hi = max(vmin, vmax) * self._x_scale
+        i_range = y_est * self._y_scale
+        self._pw.disableAutoRange()
+        self._pw.setXRange(x_lo, x_hi, padding=0.08)
+        self._pw.setYRange(-i_range, i_range, padding=0.10)
+
         if total_points > 0:
             self._progress.setRange(0, total_points)
             self._progress.setValue(0)
@@ -375,17 +386,6 @@ class PlotPanel(QWidget):
         self._data_forced[curve_id][1].append(i_meas)
         self._data_sensed[curve_id][0].append(v_sensed)
         self._data_sensed[curve_id][1].append(i_meas)
-
-        # Update Y scale label (cheap, no repaint)
-        abs_y = abs(i_meas)
-        if abs_y > self._y_max_abs:
-            self._y_max_abs = abs_y
-            new_scale, new_unit = _select_si(abs_y, self._y_base)
-            if new_scale != self._y_scale:
-                self._y_scale = new_scale
-                self._y_unit = new_unit
-                if not self._log_chk.isChecked():
-                    self._pw.setLabel("left", f"{self._y_name} ({new_unit})")
 
         self._dirty = True
         self._tick()
@@ -456,6 +456,10 @@ class PlotPanel(QWidget):
             except Exception as exc:
                 import logging as _log
                 _log.getLogger(__name__).warning("Post-sweep overlay failed: %s", exc)
+        # One-shot fit to actual data now that the sweep is complete.
+        # autoRange() in pyqtgraph does NOT re-enable continuous auto-rescaling —
+        # it is a single fit call, so the axes stay stable afterward.
+        self._pw.autoRange()
 
     def mark_error(self, msg: str):
         self._pts_lbl.setText(f"Error: {msg}")
@@ -705,6 +709,17 @@ class PlotPanel(QWidget):
         if isinstance(config, ResistorConfig):
             return max(abs(config.v_start), abs(config.v_stop), 0.01)
         return 1.0
+
+    @staticmethod
+    def _config_v_range(config: SweepConfig) -> tuple[float, float]:
+        """Return (vmin, vmax) in raw SI (V) for the primary sweep axis."""
+        if isinstance(config, TransferConfig):
+            return config.vgs_start, config.vgs_stop
+        if isinstance(config, OutputConfig):
+            return config.vds_start, config.vds_stop
+        if isinstance(config, ResistorConfig):
+            return config.v_start, config.v_stop
+        return -1.0, 1.0
 
     @staticmethod
     def _compliance_estimate(config: SweepConfig) -> float:

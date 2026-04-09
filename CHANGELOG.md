@@ -9,6 +9,55 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.0] — 2026-04-09
+
+### Fixed
+
+- **Live plot scroll loop** — pyqtgraph's default `enableAutoRange` caused the
+  view to re-fit on every `setData` call at 25 Hz, producing a constant
+  scrolling / jumping effect.  `disableAutoRange()` is now called in
+  `prepare()` and axes are pre-set to the sweep range + compliance from the
+  config.  `autoRange()` is called once in `mark_done()` for a final fit after
+  the sweep completes.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **Nonsense Y readings during measurement** — `_y_scale` (the SI prefix
+  multiplier) was updated dynamically in `append_point()` as larger currents
+  arrived, causing the axis label and all plotted values to silently change
+  units mid-sweep while the view range stayed fixed.  The scale is now frozen
+  at the value computed in `prepare()` from the compliance setting; the
+  post-sweep `autoRange()` rescales to the actual data.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+### Changed
+
+- **Layout rearrangement** — queue panel moved below sweep configuration in a
+  vertical splitter; live plot now occupies all remaining horizontal space.
+  New hierarchy:
+  `[instruments | [sweep / queue (vertical)] | plot (expands)]`.
+  All dividers are draggable; instrument and sweep+queue columns have a
+  minimum width but no fixed width, so the user can resize freely.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py),
+  [queue_panel.py](src/keithley_iv_suite/ui/panels/queue_panel.py),
+  [instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+- **VISA scan robustness** — connect buttons on existing rows are disabled
+  while a background scan is running to prevent VISA resource contention.
+  `open_resource()` now passes `open_timeout` to pyvisa.  GPIB resources
+  receive a `clear()` before the `*IDN?` query to flush stale I/O from prior
+  sessions.  `VisaIOError` is caught and logged with the resource address for
+  easier diagnosis of intermittent connection failures.
+  ([visa_manager.py](src/keithley_iv_suite/instruments/visa_manager.py),
+  [instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+- **Connect robustness** — `_connect_instrument` now retries `open_resource()`
+  once after a 500 ms delay and retries `*IDN?` once after 300 ms.  A failed
+  `reset()` logs a warning but no longer blocks the connection — the driver is
+  still registered so measurement can proceed.
+  ([instrument_panel.py](src/keithley_iv_suite/ui/panels/instrument_panel.py))
+
+---
+
 ## [1.3.0] — 2026-04-09
 
 ### Changed

@@ -38,8 +38,8 @@ class QueuePanel(QWidget):
         super().__init__(parent)
         self._queue = queue
         self._build_ui()
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setFixedWidth(260)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.setMinimumWidth(180)
 
     # ------------------------------------------------------------------
     # UI construction

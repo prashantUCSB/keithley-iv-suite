@@ -73,48 +73,67 @@ class MainWindow(QMainWindow):
         top_bar = self._make_top_bar()
         main_layout.addWidget(top_bar)
 
-        # ── Main splitter: [left panel | center | right panel] ───────────
+        # ── Layout: [instruments | [sweep+queue vertical] | plot] ────────
+        #
+        # h_splitter
+        #   ├── _instr_panel       (left,  ~300 px, min-resizable)
+        #   └── right_h_split      (expands horizontally)
+        #         ├── left_v_split (~370 px, min-resizable)
+        #         │     ├── _sweep_panel  (top, fixed height)
+        #         │     └── _queue_panel  (bottom, expands vertically)
+        #         └── _plot_panel  (expands — takes all remaining width)
+
         h_splitter = QSplitter(Qt.Orientation.Horizontal)
         h_splitter.setChildrenCollapsible(False)
+        h_splitter.setHandleWidth(4)
 
-        # Left: instruments
+        # ── Left: instruments ─────────────────────────────────────────────
         self._instr_panel = InstrumentPanel(
             self._visa_manager if self._visa_manager else self._dummy_visa()
         )
         self._instr_panel.instruments_changed.connect(self._on_instruments_changed)
         h_splitter.addWidget(self._instr_panel)
 
-        # Center: config + plot (vertical splitter)
-        v_splitter = QSplitter(Qt.Orientation.Vertical)
-        v_splitter.setChildrenCollapsible(True)
+        # ── Right: sweep+queue column  |  plot ───────────────────────────
+        right_h_split = QSplitter(Qt.Orientation.Horizontal)
+        right_h_split.setChildrenCollapsible(False)
+        right_h_split.setHandleWidth(4)
+
+        # Left column of right: sweep (top) + queue (bottom)
+        left_v_split = QSplitter(Qt.Orientation.Vertical)
+        left_v_split.setChildrenCollapsible(True)
+        left_v_split.setHandleWidth(4)
 
         self._sweep_panel = SweepPanel()
         self._sweep_panel.run_requested.connect(self._run_single)
         self._sweep_panel.add_to_queue_requested.connect(self._add_to_queue)
-        v_splitter.addWidget(self._sweep_panel)
+        left_v_split.addWidget(self._sweep_panel)
 
-        self._plot_panel = PlotPanel()
-        self._plot_panel.export_requested.connect(self._export_last_result)
-        self._plot_panel.params_updated.connect(self._on_params_updated)
-        v_splitter.addWidget(self._plot_panel)
-
-        # Sweep panel: fixed height, doesn't grow when window is resized.
-        # Plot panel: takes all available vertical space.
-        v_splitter.setSizes([240, 720])
-        v_splitter.setStretchFactor(0, 0)   # sweep panel — fixed
-        v_splitter.setStretchFactor(1, 1)   # plot panel  — expands
-        h_splitter.addWidget(v_splitter)
-
-        # Right: queue
         self._queue_panel = QueuePanel(self._queue)
         self._queue_panel.run_queue_requested.connect(self._run_queue)
         self._queue_panel.stop_queue_requested.connect(self._stop_measurement)
-        h_splitter.addWidget(self._queue_panel)
+        left_v_split.addWidget(self._queue_panel)
 
-        h_splitter.setSizes([280, 940, 260])
-        h_splitter.setStretchFactor(0, 0)   # instrument panel — fixed
-        h_splitter.setStretchFactor(1, 1)   # center           — expands
-        h_splitter.setStretchFactor(2, 0)   # queue panel      — fixed
+        # Sweep panel occupies a fixed slice; queue takes the rest.
+        left_v_split.setSizes([440, 480])
+        left_v_split.setStretchFactor(0, 0)   # sweep — doesn't grow
+        left_v_split.setStretchFactor(1, 1)   # queue — expands
+
+        # Plot panel: occupies the bulk of the horizontal space.
+        self._plot_panel = PlotPanel()
+        self._plot_panel.export_requested.connect(self._export_last_result)
+        self._plot_panel.params_updated.connect(self._on_params_updated)
+
+        right_h_split.addWidget(left_v_split)
+        right_h_split.addWidget(self._plot_panel)
+        right_h_split.setSizes([370, 830])
+        right_h_split.setStretchFactor(0, 0)   # left column — doesn't grow
+        right_h_split.setStretchFactor(1, 1)   # plot         — expands
+
+        h_splitter.addWidget(right_h_split)
+        h_splitter.setSizes([300, 1200])
+        h_splitter.setStretchFactor(0, 0)   # instruments — doesn't grow
+        h_splitter.setStretchFactor(1, 1)   # right area  — expands
         main_layout.addWidget(h_splitter, stretch=1)
 
         # ── Status bar ───────────────────────────────────────────────────
