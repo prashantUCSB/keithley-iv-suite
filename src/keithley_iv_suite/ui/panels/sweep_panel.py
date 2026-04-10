@@ -474,15 +474,21 @@ class TransferTab(QWidget):
         cform.addRow("Gate (Ig):",  self.comp_gate)
         layout.addWidget(comp)
 
-        qual, self._q = _quality_group_mosfet()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_mosfet()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
         self._inner.addTab(_instructions_widget(_mosfet_instructions_html()), "Instructions")
         outer.addWidget(self._inner, stretch=1)
 
@@ -560,15 +566,21 @@ class OutputTab(QWidget):
         cform.addRow("Gate:",  self.comp_gate)
         layout.addWidget(comp)
 
-        qual, self._q = _quality_group_mosfet()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_mosfet()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
         self._inner.addTab(_instructions_widget(_mosfet_instructions_html()), "Instructions")
         outer.addWidget(self._inner, stretch=1)
 
@@ -644,15 +656,21 @@ class ResistorTab(QWidget):
         form.addRow("Compliance:",  self.comp)
         layout.addWidget(params)
 
-        qual, self._q = _quality_group_vsource()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_vsource()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
         self._inner.addTab(_instructions_widget(_resistor_instructions_html()), "Instructions")
         outer.addWidget(self._inner, stretch=1)
 
@@ -723,15 +741,21 @@ class VanDerPauwTab(QWidget):
         tf.addRow("Thickness:", self.thickness)
         layout.addWidget(thick)
 
-        qual, self._q = _quality_group_isource()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional — e.g. Config 1)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_isource()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
         self._inner.addTab(_instructions_widget(_current_source_instructions_html()), "Instructions")
         outer.addWidget(self._inner, stretch=1)
 
@@ -807,15 +831,21 @@ class HallBarTab(QWidget):
         mf.addRow("Thickness:", self.thickness)
         layout.addWidget(mag)
 
-        qual, self._q = _quality_group_isource()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_isource()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
         self._inner.addTab(_instructions_widget(_current_source_instructions_html()), "Instructions")
         outer.addWidget(self._inner, stretch=1)
 
@@ -895,15 +925,21 @@ class Generic4PortTab(QWidget):
         bf.addRow("T3 comp:", self.comp_t3)
         layout.addWidget(bias)
 
-        qual, self._q = _quality_group_vsource()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_vsource()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
         self._inner.addTab(_instructions_widget(_generic4port_instructions_html()), "Instructions")
         outer.addWidget(self._inner, stretch=1)
 
@@ -1018,15 +1054,21 @@ class FourPointProbeTab(QWidget):
         gf.addRow("Thickness (opt.):", self.thickness_nm)
         layout.addWidget(geo_box)
 
-        qual, self._q = _quality_group_isource()
-        layout.addWidget(qual)
-
         self.label_edit = QLineEdit()
         self.label_edit.setPlaceholderText("Run label (optional)")
         layout.addWidget(self.label_edit)
         layout.addStretch()
 
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_isource()
+        al.addWidget(qual)
+        al.addStretch()
+
         self._inner.addTab(settings_w, "Settings")
+        self._inner.addTab(aw, "Advanced")
 
         # ── Wiring Guide sub-tab ──────────────────────────────────────────
         guide_w = QWidget()
