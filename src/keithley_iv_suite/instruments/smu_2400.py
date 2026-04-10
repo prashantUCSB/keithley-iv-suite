@@ -49,16 +49,22 @@ class SMU2400(SMUBase):
         return self._query("*IDN?")
 
     def reset(self) -> None:
-        # Flush any pending read data so the interface is clean before *RST.
+        # :ABORt returns the 2400 to the trigger-idle state regardless of
+        # what it was doing (mid-sweep, waiting for trigger, output ON).
+        # Ignore errors — instrument may already be idle.
         try:
-            self._resource.clear()
+            self._write(":ABOR")
         except Exception:
             pass
+        # *RST performs a full hardware reset.  Do NOT call resource.clear()
+        # here — it may already have been called by the connect sequence, and a
+        # back-to-back INITIATE_CLEAR causes USB-TMC to desync, making the next
+        # viWrite fail with VI_ERROR_TMO.  Do NOT use *OPC? immediately after
+        # *RST — the 2400 cannot accept a query for ~500 ms post-reset; a plain
+        # sleep is more reliable for this model.
         self._write("*RST")
+        time.sleep(1.0)
         self._write("*CLS")
-        # *OPC? blocks until the instrument finishes processing *RST/*CLS.
-        # Without this the 2400 rejects the next write with VI_ERROR_TMO.
-        self._query("*OPC?")
         self._write(":SYST:BEEP:STAT OFF")
         self._write(":FORM:ELEM VOLT,CURR")
         self._write(f":SENS:CURR:NPLC {self._nplc}")
