@@ -37,6 +37,9 @@ class SMU2400(SMUBase):
         self._delay_s = delay_s
         self._compliance = 0.1
         self._output_on = False
+        # 10 s covers *RST + long NPLC reads (NPLC=25 @ 50 Hz = 500 ms/pt)
+        # with plenty of margin for USB-TMC round-trip overhead.
+        resource.timeout = 10_000
 
     # ------------------------------------------------------------------
     # SMUBase implementation
@@ -46,9 +49,16 @@ class SMU2400(SMUBase):
         return self._query("*IDN?")
 
     def reset(self) -> None:
+        # Flush any pending read data so the interface is clean before *RST.
+        try:
+            self._resource.clear()
+        except Exception:
+            pass
         self._write("*RST")
         self._write("*CLS")
-        time.sleep(0.1)
+        # *OPC? blocks until the instrument finishes processing *RST/*CLS.
+        # Without this the 2400 rejects the next write with VI_ERROR_TMO.
+        self._query("*OPC?")
         self._write(":SYST:BEEP:STAT OFF")
         self._write(":FORM:ELEM VOLT,CURR")
         self._write(f":SENS:CURR:NPLC {self._nplc}")

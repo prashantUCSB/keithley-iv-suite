@@ -263,7 +263,7 @@ class VISAManager:
     def open_resource(
         self,
         resource_string: str,
-        timeout_ms: int = 5000,
+        timeout_ms: int = 10000,
         read_termination: str = "\n",
         write_termination: str = "\n",
     ) -> pyvisa.resources.Resource:
