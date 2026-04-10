@@ -75,21 +75,33 @@ class SMU2600(SMUBase):
         self,
         compliance_current: float,
         voltage_range: Optional[float] = None,
+        sense_range_i: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
     ) -> None:
         self._compliance = compliance_current
         smu = self._smu
         self._tsp(f"{smu}.source.func = {smu}.OUTPUT_DCVOLTS")
         if voltage_range is not None:
-            self._tsp(f"{smu}.source.rangev = {voltage_range}")
+            self._tsp(f"{smu}.source.rangev = {voltage_range:.6g}")
         else:
             self._tsp(f"{smu}.source.autorangev = 1")   # 1 = AUTORANGE_ON
-        self._tsp(f"{smu}.source.limiti = {compliance_current}")
-        self._tsp(f"{smu}.measure.autorangei = 1")       # 1 = AUTORANGE_ON
+        self._tsp(f"{smu}.source.limiti = {compliance_current:.6g}")
+        if sense_range_i is not None:
+            self._tsp(f"{smu}.measure.autorangei = 0")  # 0 = AUTORANGE_OFF
+            self._tsp(f"{smu}.measure.rangei = {sense_range_i:.6g}")
+        else:
+            self._tsp(f"{smu}.measure.autorangei = 1")  # 1 = AUTORANGE_ON
+        self._tsp(f"{smu}.measure.nplc = {nplc:.6g}")
+        self._nplc = nplc
+        if source_delay_s > 0:
+            self._tsp(f"{smu}.source.delay = {source_delay_s:.6g}")
         self._tsp(f"{smu}.source.output = {smu}.OUTPUT_OFF")
         log.debug(
-            "SMU2600 Ch%s configured: Vsource, Ilim=%.3e A",
-            self._channel,
-            compliance_current,
+            "SMU2600 Ch%s configured: Vsource, Ilim=%.3e A, sense_range=%s, nplc=%.2f",
+            self._channel, compliance_current,
+            f"{sense_range_i:.2e} A" if sense_range_i else "auto",
+            nplc,
         )
 
     def set_voltage(self, voltage: float) -> None:
@@ -99,6 +111,9 @@ class SMU2600(SMUBase):
         self,
         compliance_voltage: float,
         current_range=None,
+        sense_range_v: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
     ) -> None:
         smu = self._smu
         self._tsp(f"{smu}.source.func = {smu}.OUTPUT_DCAMPS")
@@ -107,11 +122,21 @@ class SMU2600(SMUBase):
         else:
             self._tsp(f"{smu}.source.autorangei = 1")
         self._tsp(f"{smu}.source.limitv = {compliance_voltage:.6g}")
-        self._tsp(f"{smu}.measure.autorangev = 1")
+        if sense_range_v is not None:
+            self._tsp(f"{smu}.measure.autorangev = 0")  # 0 = AUTORANGE_OFF
+            self._tsp(f"{smu}.measure.rangev = {sense_range_v:.6g}")
+        else:
+            self._tsp(f"{smu}.measure.autorangev = 1")
+        self._tsp(f"{smu}.measure.nplc = {nplc:.6g}")
+        self._nplc = nplc
+        if source_delay_s > 0:
+            self._tsp(f"{smu}.source.delay = {source_delay_s:.6g}")
         self._tsp(f"{smu}.source.output = {smu}.OUTPUT_OFF")
         log.debug(
-            "SMU2600 Ch%s configured: Isource, Vlim=%.3g V",
+            "SMU2600 Ch%s configured: Isource, Vlim=%.3g V, sense_range=%s, nplc=%.2f",
             self._channel, compliance_voltage,
+            f"{sense_range_v:.2e} V" if sense_range_v else "auto",
+            nplc,
         )
 
     def set_current(self, current: float) -> None:

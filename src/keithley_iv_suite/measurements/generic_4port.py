@@ -51,7 +51,13 @@ def run_generic_4port(
 
     # Configure T1 as voltage source
     t1_smu.reset()
-    t1_smu.configure_voltage_source(compliance_current=config.compliance_A)
+    t1_smu.configure_voltage_source(
+        compliance_current=config.compliance_A,
+        voltage_range=config.source_range_V,
+        sense_range_i=config.sense_range_A,
+        nplc=config.nplc,
+        source_delay_s=config.source_delay_s,
+    )
     t1_smu.set_voltage(v_list[0])
     t1_smu.output_on()
     time.sleep(config.settling_delay_s * 2)

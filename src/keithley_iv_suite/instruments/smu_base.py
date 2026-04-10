@@ -77,7 +77,21 @@ class SMUBase(ABC):
         self,
         compliance_current: float,
         voltage_range: Optional[float] = None,
-    ) -> None: ...
+        sense_range_i: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
+    ) -> None:
+        """Configure as a DC voltage source.
+
+        Parameters
+        ----------
+        compliance_current : current compliance limit (A)
+        voltage_range      : explicit source range (V); None = autorange
+        sense_range_i      : explicit current measurement range (A); None = autorange
+        nplc               : integration time in power-line cycles
+        source_delay_s     : hardware source delay (s); 0 = use instrument default
+        """
+        ...
 
     @abstractmethod
     def set_voltage(self, voltage: float) -> None: ...
@@ -87,13 +101,19 @@ class SMUBase(ABC):
         self,
         compliance_voltage: float,
         current_range: Optional[float] = None,
+        sense_range_v: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
     ) -> None:
         """Configure as a DC current source.
 
         Parameters
         ----------
         compliance_voltage : voltage compliance limit (V)
-        current_range      : explicit range (A); None = autorange
+        current_range      : explicit source range (A); None = autorange
+        sense_range_v      : explicit voltage measurement range (V); None = autorange
+        nplc               : integration time in power-line cycles
+        source_delay_s     : hardware source delay (s); 0 = use instrument default
         """
         ...
 
@@ -102,13 +122,24 @@ class SMUBase(ABC):
         """Set the DC current level (A).  Must call configure_current_source first."""
         ...
 
-    def configure_voltmeter(self, compliance_voltage: float = 10.0) -> None:
+    def configure_voltmeter(
+        self,
+        compliance_voltage: float = 10.0,
+        sense_range_v: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
+    ) -> None:
         """Configure as a high-impedance voltmeter (force 0 A, measure V).
 
         Default implementation re-uses configure_current_source + set_current(0).
         Subclasses may override if the hardware has a dedicated voltmeter mode.
         """
-        self.configure_current_source(compliance_voltage=compliance_voltage)
+        self.configure_current_source(
+            compliance_voltage=compliance_voltage,
+            sense_range_v=sense_range_v,
+            nplc=nplc,
+            source_delay_s=source_delay_s,
+        )
         self.set_current(0.0)
 
     @abstractmethod

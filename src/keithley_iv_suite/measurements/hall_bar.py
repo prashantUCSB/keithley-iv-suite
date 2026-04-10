@@ -68,14 +68,24 @@ def run_hall_sweep(
 
     # Configure current source
     i_smu.reset()
-    i_smu.configure_current_source(compliance_voltage=config.compliance_V)
+    i_smu.configure_current_source(
+        compliance_voltage=config.compliance_V,
+        current_range=config.source_range_A,
+        nplc=config.nplc,
+        source_delay_s=config.source_delay_s,
+    )
     i_smu.set_current(i_list[0])
     i_smu.output_on()
     time.sleep(config.settling_delay_s * 2)
 
     # Configure voltmeter
     v_smu.reset()
-    v_smu.configure_voltmeter(compliance_voltage=config.compliance_V)
+    v_smu.configure_voltmeter(
+        compliance_voltage=config.compliance_V,
+        sense_range_v=config.sense_range_V,
+        nplc=config.nplc,
+        source_delay_s=config.source_delay_s,
+    )
     v_smu.output_on()
     time.sleep(config.settling_delay_s)
 

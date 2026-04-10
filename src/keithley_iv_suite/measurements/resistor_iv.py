@@ -45,7 +45,13 @@ def run_resistor_sweep(
     n_pts = len(v_list)
 
     smu.reset()
-    smu.configure_voltage_source(compliance_current=config.compliance_A)
+    smu.configure_voltage_source(
+        compliance_current=config.compliance_A,
+        voltage_range=config.source_range_V,
+        sense_range_i=config.sense_range_A,
+        nplc=config.nplc,
+        source_delay_s=config.source_delay_s,
+    )
     smu.set_voltage(v_list[0])
     smu.output_on()
     time.sleep(config.settling_delay_s * 2)

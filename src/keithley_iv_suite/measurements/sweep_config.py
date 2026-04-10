@@ -7,12 +7,13 @@ from typing import Optional
 
 
 class MeasurementType(Enum):
-    NMOS_TRANSFER  = "nMOS Transfer (Id-Vgs)"
-    NMOS_OUTPUT    = "nMOS Output (Id-Vds)"
-    RESISTOR_IV    = "Resistor IV"
-    VAN_DER_PAUW   = "Van der Pauw (Rs)"
-    HALL_BAR       = "Hall Bar (Rxy, n, µ)"
-    GENERIC_4PORT  = "Generic 4-Port"
+    NMOS_TRANSFER    = "nMOS Transfer (Id-Vgs)"
+    NMOS_OUTPUT      = "nMOS Output (Id-Vds)"
+    RESISTOR_IV      = "Resistor IV"
+    VAN_DER_PAUW     = "Van der Pauw (Rs)"
+    HALL_BAR         = "Hall Bar (Rxy, n, µ)"
+    GENERIC_4PORT    = "Generic 4-Port"
+    FOUR_POINT_PROBE = "Four-Point Probe (Rs)"
 
 
 class TerminalRole(Enum):
@@ -66,6 +67,7 @@ class SweepConfig:
     compliance_drain_A: float = 0.1             # 100 mA default drain compliance
     nplc: float = 1.0
     settling_delay_s: float = 0.02
+    source_delay_s: float = 0.0          # hardware-side source delay (s); 0 = use auto/default
     assignments: list[TerminalAssignment] = field(default_factory=list)
 
     def get_assignment(self, role: TerminalRole) -> Optional[TerminalAssignment]:
@@ -83,6 +85,10 @@ class TransferConfig(SweepConfig):
     vgs_stop: float = 3.0
     vgs_step: float = 0.05
     vds_fixed: float = 0.1
+    # Range controls — None means hardware auto-range
+    drain_sense_range_A: Optional[float] = None   # drain current measurement range
+    gate_sense_range_A: Optional[float] = None    # gate current measurement range
+    source_range_V: Optional[float] = None        # voltage source range (gate + drain)
 
     @property
     def vgs_points(self) -> int:
@@ -106,6 +112,10 @@ class OutputConfig(SweepConfig):
     vds_stop: float = 3.0
     vds_step: float = 0.05
     vgs_list_values: list[float] = field(default_factory=lambda: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+    # Range controls
+    drain_sense_range_A: Optional[float] = None
+    gate_sense_range_A: Optional[float] = None
+    source_range_V: Optional[float] = None
 
     @property
     def vds_points(self) -> int:
@@ -129,6 +139,9 @@ class ResistorConfig(SweepConfig):
     v_stop: float = 1.0
     v_step: float = 0.05
     compliance_A: float = 0.1
+    # Range controls
+    sense_range_A: Optional[float] = None
+    source_range_V: Optional[float] = None
 
     @property
     def v_points(self) -> int:
@@ -158,6 +171,9 @@ class VanDerPauwConfig(SweepConfig):
     i_step:  float =  1e-6      # A  (1 µA)
     compliance_V: float = 10.0
     thickness_m: Optional[float] = None   # sample thickness for ρ calculation
+    # Range controls
+    source_range_A: Optional[float] = None   # current source range
+    sense_range_V: Optional[float] = None    # voltage measurement range
 
     @property
     def i_points(self) -> int:
@@ -189,6 +205,9 @@ class HallBarConfig(SweepConfig):
     compliance_V: float = 10.0
     b_field_T: float = 0.0      # magnetic field (T) — set manually on magnet
     thickness_m: Optional[float] = None   # for ρ calculation
+    # Range controls
+    source_range_A: Optional[float] = None
+    sense_range_V: Optional[float] = None
 
     @property
     def i_points(self) -> int:
@@ -219,6 +238,9 @@ class Generic4PortConfig(SweepConfig):
     v_t3_bias: float = 0.0
     comp_t2_A: float = 0.01
     comp_t3_A: float = 0.01
+    # Range controls
+    sense_range_A: Optional[float] = None
+    source_range_V: Optional[float] = None
 
     @property
     def v_points(self) -> int:
@@ -229,3 +251,71 @@ class Generic4PortConfig(SweepConfig):
     def v_list(self) -> list[float]:
         n = self.v_points
         return [round(self.v_start + k * self.v_step, 9) for k in range(n)]
+
+
+@dataclass
+class FourPointProbeConfig(SweepConfig):
+    """Collinear four-point probe sheet-resistance measurement.
+
+    Probe layout (Valdes / Smits geometry):
+        [1] → I+    outer probe, sources current
+        [2] → V+    inner probe, senses voltage
+        [3] → V−    inner probe, senses voltage
+        [4] → I−    outer probe, sinks current
+
+    Sheet resistance  Rs = (π / ln 2) × (V / I) × F_correction  [Ω/□]
+    Resistivity       ρ  = Rs × thickness_m                       [Ω·m]
+
+    Measurement:  current is swept symmetrically (−I_max → +I_max) and V
+    is recorded by a second SMU acting as voltmeter (forces 0 A).  A linear
+    fit to V vs I gives R_transfer = slope; Rs is then computed from the
+    formula above.  The swept approach gives a reliable R² quality indicator
+    and is robust against thermoelectric offsets.
+
+    Probe and geometry notes
+    -------------------------
+    Signatone SP4 (standard collinear head):
+        s = 1.016 mm  (40 mil / 1.016 mm equally-spaced probes)
+
+    Correction factor F:
+        F = 1.000   semi-infinite plane  (sample ≫ probe spacing)
+        F < 1.000   finite sample        (use Smits 1958 table or enter manually)
+        For a 150 mm wafer with s = 1.016 mm: d/s ≈ 148 → F ≈ 1.000
+        For a  10 mm square chip with s = 1.016 mm: d/s ≈ 9.8 → F ≈ 0.98
+
+    Suggested current ranges by expected Rs:
+        Rs < 10 Ω/□      (metals, silicides)      →  I = 10–100 mA
+        Rs 10–1000 Ω/□   (ITO, doped Si, TCO)     →  I = 1–10 mA
+        Rs 1–100 kΩ/□    (lightly doped Si, SiC)  →  I = 100 µA – 1 mA
+        Rs > 100 kΩ/□    (semi-insulating)         →  I = 1–100 µA
+    """
+    measurement_type: MeasurementType = MeasurementType.FOUR_POINT_PROBE
+
+    # Current sweep — default ±10 µA (safe for most thin films / doped wafers)
+    i_start: float = -1e-5      # A  (−10 µA)
+    i_stop:  float =  1e-5      # A  (+10 µA)
+    i_step:  float =  1e-6      # A  (1 µA step → 21 points)
+    compliance_V: float = 10.0  # V  (voltage compliance on both SMUs)
+    # Range controls
+    source_range_A: Optional[float] = None
+    sense_range_V: Optional[float] = None
+
+    # Probe geometry
+    probe_spacing_m: float = 1.016e-3   # m  (SP4 standard: 40 mil = 1.016 mm)
+
+    # Geometric correction factor F (Smits 1958)
+    #   1.0 → semi-infinite plane (default, valid when sample ≫ s)
+    correction_F: float = 1.0
+
+    # Sample thickness (optional) — used only to compute ρ = Rs × t
+    thickness_m: Optional[float] = None
+
+    @property
+    def i_points(self) -> int:
+        if self.i_step == 0:
+            return 1
+        return int(abs(self.i_stop - self.i_start) / abs(self.i_step)) + 1
+
+    def i_list(self) -> list[float]:
+        n = self.i_points
+        return [round(self.i_start + k * self.i_step, 15) for k in range(n)]

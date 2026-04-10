@@ -47,13 +47,22 @@ def run_transfer_sweep(
     n_pts = len(vgs_list)
 
     # --- reset and configure all SMUs ---
-    for smu, label in [(gate_smu, "Gate"), (drain_smu, "Drain")]:
-        smu.reset()
-        smu.configure_voltage_source(
-            compliance_current=(
-                config.compliance_gate_A if label == "Gate" else config.compliance_drain_A
-            )
-        )
+    gate_smu.reset()
+    gate_smu.configure_voltage_source(
+        compliance_current=config.compliance_gate_A,
+        voltage_range=config.source_range_V,
+        sense_range_i=config.gate_sense_range_A,
+        nplc=config.nplc,
+        source_delay_s=config.source_delay_s,
+    )
+    drain_smu.reset()
+    drain_smu.configure_voltage_source(
+        compliance_current=config.compliance_drain_A,
+        voltage_range=config.source_range_V,
+        sense_range_i=config.drain_sense_range_A,
+        nplc=config.nplc,
+        source_delay_s=config.source_delay_s,
+    )
 
     if source_smu is not None:
         source_smu.reset()

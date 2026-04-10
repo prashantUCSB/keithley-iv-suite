@@ -60,18 +60,35 @@ class SMU2400(SMUBase):
         self,
         compliance_current: float,
         voltage_range: Optional[float] = None,
+        sense_range_i: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
     ) -> None:
         self._compliance = compliance_current
         self._write(":SOUR:FUNC VOLT")
         if voltage_range is not None:
-            self._write(f":SOUR:VOLT:RANG {voltage_range}")
+            self._write(f":SOUR:VOLT:RANG {voltage_range:.6g}")
         else:
             self._write(":SOUR:VOLT:RANG:AUTO ON")
         self._write(":SENS:FUNC \"CURR:DC\"")
-        self._write(":SENS:CURR:RANG:AUTO ON")
-        self._write(f":SENS:CURR:PROT {compliance_current}")
+        if sense_range_i is not None:
+            self._write(":SENS:CURR:RANG:AUTO OFF")
+            self._write(f":SENS:CURR:RANG {sense_range_i:.6g}")
+        else:
+            self._write(":SENS:CURR:RANG:AUTO ON")
+        self._write(f":SENS:CURR:PROT {compliance_current:.6g}")
+        self._write(f":SENS:CURR:NPLC {nplc:.6g}")
+        self._nplc = nplc
+        if source_delay_s > 0:
+            self._write(":SOUR:DEL:AUTO OFF")
+            self._write(f":SOUR:DEL {max(0.001, source_delay_s):.6g}")
         self._write(":FORM:ELEM VOLT,CURR")
-        log.debug("SMU2400 configured: Vsource, Ilim=%.3e A", compliance_current)
+        log.debug(
+            "SMU2400 configured: Vsource, Ilim=%.3e A, sense_range=%s, nplc=%.2f",
+            compliance_current,
+            f"{sense_range_i:.2e} A" if sense_range_i else "auto",
+            nplc,
+        )
 
     def set_voltage(self, voltage: float) -> None:
         self._write(f":SOUR:VOLT:LEV {voltage:.6g}")
@@ -80,6 +97,9 @@ class SMU2400(SMUBase):
         self,
         compliance_voltage: float,
         current_range=None,
+        sense_range_v: Optional[float] = None,
+        nplc: float = 1.0,
+        source_delay_s: float = 0.0,
     ) -> None:
         self._write(":SOUR:FUNC CURR")
         if current_range is not None:
@@ -87,10 +107,24 @@ class SMU2400(SMUBase):
         else:
             self._write(":SOUR:CURR:RANG:AUTO ON")
         self._write(":SENS:FUNC \"VOLT:DC\"")
-        self._write(":SENS:VOLT:RANG:AUTO ON")
+        if sense_range_v is not None:
+            self._write(":SENS:VOLT:RANG:AUTO OFF")
+            self._write(f":SENS:VOLT:RANG {sense_range_v:.6g}")
+        else:
+            self._write(":SENS:VOLT:RANG:AUTO ON")
         self._write(f":SENS:VOLT:PROT {compliance_voltage:.6g}")
+        self._write(f":SENS:VOLT:NPLC {nplc:.6g}")
+        self._nplc = nplc
+        if source_delay_s > 0:
+            self._write(":SOUR:DEL:AUTO OFF")
+            self._write(f":SOUR:DEL {max(0.001, source_delay_s):.6g}")
         self._write(":FORM:ELEM VOLT,CURR")
-        log.debug("SMU2400 configured: Isource, Vlim=%.3g V", compliance_voltage)
+        log.debug(
+            "SMU2400 configured: Isource, Vlim=%.3g V, sense_range=%s, nplc=%.2f",
+            compliance_voltage,
+            f"{sense_range_v:.2e} V" if sense_range_v else "auto",
+            nplc,
+        )
 
     def set_current(self, current: float) -> None:
         self._write(f":SOUR:CURR:LEV {current:.6g}")
