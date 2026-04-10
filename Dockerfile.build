@@ -1,0 +1,59 @@
+# ============================================================
+# Keithley IV Suite v2.0.0 — Windows EXE build container
+#
+# Builds the standalone Windows EXE inside a Docker Windows
+# container, giving a reproducible clean-room build that does
+# not depend on what is installed on the developer's machine.
+#
+# REQUIREMENTS:
+#   - Docker Desktop 4.x on Windows 10/11 Pro or Enterprise
+#   - Switch Docker to Windows containers:
+#       System tray → Docker icon → "Switch to Windows containers"
+#   - Windows containers require Hyper-V (not available in Home edition)
+#
+# BUILD THE IMAGE:
+#   docker build -f Dockerfile.build -t iv-suite-builder:2.0.0 .
+#
+# RUN THE BUILD (output lands in .\dist on your host):
+#   docker run --rm -v "%cd%\dist:C:\app\dist" iv-suite-builder:2.0.0
+#
+# Then optionally compile the installer:
+#   scripts\build_installer.bat     (Inno Setup must be installed)
+#
+# NOTE: If you are on a machine where Docker Windows containers are
+# unavailable (e.g. Windows Home, or a Linux CI server), use the
+# native build scripts instead:
+#   scripts\build_exe.bat           (requires .venv to be set up)
+# ============================================================
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+SHELL ["powershell", "-Command", \
+       "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue';"]
+
+# ── Install Python 3.11 (embedded, system-wide) ──────────────────────────────
+RUN Invoke-WebRequest \
+        -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' \
+        -OutFile C:\python_setup.exe; \
+    Start-Process -Wait -FilePath C:\python_setup.exe \
+        -ArgumentList '/quiet', 'InstallAllUsers=1', \
+                      'PrependPath=1', 'Include_test=0', \
+                      'Include_doc=0', 'Include_launcher=0'; \
+    Remove-Item C:\python_setup.exe; \
+    python --version
+
+# ── Copy project files ───────────────────────────────────────────────────────
+WORKDIR C:\app
+COPY . .
+
+# ── Install runtime + build dependencies ─────────────────────────────────────
+RUN pip install --no-cache-dir --upgrade pip; \
+    pip install --no-cache-dir -r requirements.txt; \
+    pip install --no-cache-dir pyinstaller pyserial pyusb
+
+# ── Build the EXE ────────────────────────────────────────────────────────────
+RUN python -m PyInstaller keithley_iv_suite.spec --clean --noconfirm
+
+# Default command: print confirmation and exit
+CMD ["cmd", "/c", \
+     "echo Build complete. & echo Output: dist\\Keithley_IV_Suite\\"]

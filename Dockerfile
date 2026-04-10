@@ -1,25 +1,30 @@
 # ============================================================
-# Keithley IV Suite — Docker Image
+# Keithley IV Suite v2.0.0 — Linux Docker Image
 #
-# TARGET PLATFORM: Linux host (Ubuntu/Debian)
-# GUI: X11 (pass $DISPLAY and /tmp/.X11-unix from host)
-# VISA: USB instruments need usbipd-win on Windows hosts;
-#       Ethernet instruments work with --network=host.
+# TARGET PLATFORM: Linux host (Ubuntu/Debian/Fedora)
+# GUI: X11 forwarding ($DISPLAY + /tmp/.X11-unix from host)
+# VISA: pyvisa-py bundled (no NI-VISA needed)
+#       USB instruments: requires --device /dev/bus/usb
+#       Ethernet instruments: works with --network host
+#       GPIB-USB: works if linux-gpib is loaded on the host
 #
-# BUILD:
-#   docker build -t keithley-iv-suite .
+# QUICK START (Linux host):
+#   docker compose up          # see docker-compose.yml
 #
-# RUN (Linux host):
+# MANUAL RUN (Linux host):
+#   docker build -t keithley-iv-suite:2.0.0 .
+#   xhost +local:docker
 #   docker run --rm -it \
 #     -e DISPLAY=$DISPLAY \
 #     -v /tmp/.X11-unix:/tmp/.X11-unix \
 #     --device /dev/bus/usb \
 #     --network host \
 #     -v iv_data:/root/Documents/IV_Data \
-#     keithley-iv-suite
+#     keithley-iv-suite:2.0.0
 #
-# RUN (Windows host — Ethernet VISA only):
+# WINDOWS HOST (Ethernet VISA only):
 #   See scripts/run_docker_windows.bat
+#   For the native Windows EXE instead, see scripts/build_installer.bat
 # ============================================================
 
 FROM python:3.11-slim-bookworm
@@ -50,6 +55,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # VISA / USB
     libusb-1.0-0 \
     usbutils \
+    # pyserial / pyusb runtime support
+    python3-serial \
     # Fonts
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*

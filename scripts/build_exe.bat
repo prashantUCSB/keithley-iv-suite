@@ -1,49 +1,79 @@
 @echo off
 :: ============================================================
-:: Keithley IV Suite — PyInstaller EXE builder
+:: Keithley IV Suite v2.0.0 — PyInstaller EXE builder
 ::
-:: Run ONCE to produce dist\Keithley_IV_Suite\Keithley_IV_Suite.exe
-:: Then copy the entire dist\Keithley_IV_Suite\ folder to other computers.
-:: No Python installation required on target machines.
-:: VISA drivers (NI or Keysight) still need to be installed on targets.
+:: Produces: dist\Keithley_IV_Suite\Keithley_IV_Suite.exe
+::
+:: Usage:
+::   Double-click this file, or run from cmd.exe / PowerShell.
+::   The .venv must exist (run install_windows.bat first).
 :: ============================================================
-setlocal
+setlocal EnableDelayedExpansion
 
 set "APP_DIR=%~dp0.."
 set "VENV_PY=%APP_DIR%\.venv\Scripts\python.exe"
+set "VENV_PIP=%APP_DIR%\.venv\Scripts\pip.exe"
 
+echo.
+echo  ======================================================
+echo   Keithley IV Suite -- EXE Builder
+echo  ======================================================
+echo.
+
+:: ── Sanity check ─────────────────────────────────────────────────────────────
 if not exist "%VENV_PY%" (
-    echo [ERROR] Run scripts\install_windows.bat first.
+    echo [ERROR] Virtual environment not found at %APP_DIR%\.venv
+    echo         Run scripts\install_windows.bat first.
     pause
     exit /b 1
 )
 
 cd /d "%APP_DIR%"
 
-echo [1/2] Installing PyInstaller...
-"%APP_DIR%\.venv\Scripts\pip.exe" install pyinstaller --quiet
+:: ── Install / update build dependencies ──────────────────────────────────────
+echo [1/3] Updating build dependencies...
+"%VENV_PIP%" install --quiet --upgrade pyinstaller pyserial pyusb
 if errorlevel 1 (
-    echo [ERROR] Failed to install PyInstaller.
+    echo [ERROR] Failed to update build dependencies.
     pause
     exit /b 1
 )
+echo [OK] Build dependencies ready.
+echo.
 
-echo [2/2] Building executable...
+:: ── Clean old build artifacts ─────────────────────────────────────────────────
+echo [2/3] Cleaning previous build...
+if exist "build\Keithley_IV_Suite"   rmdir /s /q "build\Keithley_IV_Suite"
+if exist "dist\Keithley_IV_Suite"    rmdir /s /q "dist\Keithley_IV_Suite"
+echo [OK] Clean done.
+echo.
+
+:: ── Run PyInstaller ───────────────────────────────────────────────────────────
+echo [3/3] Running PyInstaller (this takes 2-5 minutes)...
 "%VENV_PY%" -m PyInstaller keithley_iv_suite.spec --clean --noconfirm
 if errorlevel 1 (
-    echo [ERROR] PyInstaller build failed.
+    echo.
+    echo [ERROR] PyInstaller build failed. Check the output above for details.
+    echo         Common causes:
+    echo           - Missing module: add to hiddenimports in keithley_iv_suite.spec
+    echo           - UPX not found: install UPX from https://upx.github.io/ or
+    echo             set upx=False in the spec file
     pause
     exit /b 1
 )
 
 echo.
 echo  ======================================================
-echo   Build complete!
-echo   Output: dist\Keithley_IV_Suite\Keithley_IV_Suite.exe
+echo   Build successful!
 echo.
-echo   Copy the entire dist\Keithley_IV_Suite\ folder to
-echo   each instrument computer and run the .exe directly.
-echo   (VISA drivers must already be installed on targets.)
+echo   Output folder:
+echo     dist\Keithley_IV_Suite\
+echo.
+echo   To distribute:
+echo     Option A -- Portable:  zip dist\Keithley_IV_Suite\ and copy
+echo                            to any Windows 10/11 (x64) machine.
+echo     Option B -- Installer: run scripts\build_installer.bat
+echo                            (requires Inno Setup 6)
 echo  ======================================================
 echo.
 pause
