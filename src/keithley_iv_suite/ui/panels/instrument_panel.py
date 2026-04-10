@@ -26,6 +26,7 @@ class ElidedLabel(QLabel):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         metrics = self.fontMetrics()
         elided = metrics.elidedText(self.text(), Qt.TextElideMode.ElideRight, self.width())
         painter.setPen(self.palette().color(self.foregroundRole()))
@@ -295,18 +296,52 @@ class InstrumentPanel(QWidget):
         self._scan_btn.setText("⟳  Scan VISA")
         for row in self._rows.values():
             row.setEnabled(True)
+
+        # Build dedup sets for already-shown rows so re-scans don't add a
+        # second row for the same physical instrument when NI-VISA returns a
+        # different resource-string variant or interface (USB vs GPIB, etc.).
+        existing_usb_keys: set = set()
+        existing_idns: set[str] = set()
+        for existing_rstr, existing_info in self._resources.items():
+            k = self._vm._usb_device_key(existing_rstr)
+            if k is not None:
+                existing_usb_keys.add(k)
+            idn_val = existing_info.get("idn", "")
+            if idn_val:
+                existing_idns.add(idn_val)
+
         new_count = 0
         for info in results:
             rstr = info["resource_string"]
-            if rstr not in self._rows:
-                self._resources[rstr] = info
-                self._add_row(
-                    rstr,
-                    info.get("friendly", rstr),
-                    is_smu=info.get("is_smu", True),
-                    idn=info.get("idn", ""),
+            if rstr in self._rows:
+                continue
+            # Skip if same physical USB device already has a row
+            usb_key = self._vm._usb_device_key(rstr)
+            if usb_key is not None and usb_key in existing_usb_keys:
+                log.debug(
+                    "Skipping UI duplicate (same USB device): %s", rstr
                 )
-                new_count += 1
+                continue
+            # Skip if same IDN already has a row (catches USB vs GPIB duplicates)
+            new_idn = info.get("idn", "")
+            if new_idn and new_idn in existing_idns:
+                log.debug(
+                    "Skipping UI duplicate (same IDN): %s", rstr
+                )
+                continue
+            if usb_key is not None:
+                existing_usb_keys.add(usb_key)
+            if new_idn:
+                existing_idns.add(new_idn)
+            self._resources[rstr] = info
+            self._add_row(
+                rstr,
+                info.get("friendly", rstr),
+                is_smu=info.get("is_smu", True),
+                idn=info.get("idn", ""),
+            )
+            new_count += 1
+
         total = len(self._rows)
         if total == 0:
             self._status_lbl.setText("No VISA instruments found.")

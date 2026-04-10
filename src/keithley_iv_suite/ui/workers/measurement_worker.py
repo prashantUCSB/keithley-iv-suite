@@ -8,7 +8,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from ...instruments.smu_base import SMUBase
 from ...measurements.sweep_config import (
-    Generic4PortConfig, HallBarConfig, MeasurementType,
+    FourPointProbeConfig, Generic4PortConfig, HallBarConfig, MeasurementType,
     OutputConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
 )
 from ...measurements.nmos_transfer import run_transfer_sweep
@@ -16,6 +16,7 @@ from ...measurements.nmos_output import run_output_sweep
 from ...measurements.resistor_iv import run_resistor_sweep
 from ...measurements.van_der_pauw import run_vdp_sweep
 from ...measurements.hall_bar import run_hall_sweep
+from ...measurements.four_point_probe import run_four_point_probe
 from ...measurements.generic_4port import run_generic_4port
 
 log = logging.getLogger(__name__)
@@ -153,6 +154,19 @@ class MeasurementWorker(QThread):
                 t3_smu=t3,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
                 data_cb=lambda vf, i, vs, ci: self.data_point.emit(vf, i, vs, ci),
+                abort_flag=self._abort_flag,
+            )
+
+        if mtype == MeasurementType.FOUR_POINT_PROBE:
+            assert isinstance(cfg, FourPointProbeConfig)
+            i_smu = self._resolve("i_plus", cfg)
+            v_smu = self._resolve("v_plus", cfg)
+            return run_four_point_probe(
+                config=cfg,
+                i_smu=i_smu,
+                v_smu=v_smu,
+                progress_cb=lambda s, t: self.progress.emit(s, t),
+                data_cb=lambda i, v, vs, ci: self.data_point.emit(i, v, vs, ci),
                 abort_flag=self._abort_flag,
             )
 

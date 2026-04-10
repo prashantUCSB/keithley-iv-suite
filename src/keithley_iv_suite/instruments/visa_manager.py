@@ -125,6 +125,20 @@ class VISAManager:
             deduped.append(rstr)
         all_resources = deduped
 
+        # Build USB device-key set for the skip list so both '::INSTR' and
+        # '::0::INSTR' variants of a connected resource are excluded even when
+        # NI-VISA returns the opposite variant from the one that was opened.
+        skip_usb_keys: set[tuple] = set()
+        for s in skip:
+            k = self._usb_device_key(s)
+            if k is not None:
+                skip_usb_keys.add(k)
+
+        # IDN-based dedup: same physical instrument can appear under multiple
+        # resource strings (USB + GPIB, two USB variants, etc.).  The IDN is
+        # the only truly unique identifier — track the ones already confirmed.
+        seen_idns: set[str] = set()
+
         results: list[dict] = []
         for rstr in all_resources:
             # Skip serial ports — they are never Keithley SMUs and always
@@ -136,6 +150,12 @@ class VISAManager:
             # Skip resources already held open by our own connected drivers.
             if rstr in skip:
                 log.debug("Skipping already-connected resource: %s", rstr)
+                continue
+            # Also skip by USB device key so the alternate variant string
+            # (e.g. '::0::INSTR' when '::INSTR' is already connected) is caught.
+            rstr_key = self._usb_device_key(rstr)
+            if rstr_key is not None and rstr_key in skip_usb_keys:
+                log.debug("Skipping USB variant of already-connected resource: %s", rstr)
                 continue
 
             info = self._parse_resource_string(rstr)
@@ -180,17 +200,18 @@ class VISAManager:
                     except Exception:
                         pass
             except pyvisa.errors.VisaIOError as exc:
-                # VI_ERROR_NCIC: our own driver still holds this resource open.
-                # Add the entry using hardware ID so the user can still see it.
-                if "NCIC" in str(exc) and is_keithley_usb:
+                # VI_ERROR_NCIC means another VISA session already owns this
+                # USB device.  This is always the same physical instrument as
+                # an already-connected resource — either the exact string or
+                # its '::0::INSTR' / '::INSTR' alternate form.  The instrument's
+                # row is already present in the UI from the initial scan or from
+                # the manual-add path; adding it again here creates a duplicate
+                # that can never be connected.  Just skip.
+                if "NCIC" in str(exc):
                     log.info(
-                        "Resource %s is held by an existing session (NCIC) — "
-                        "adding via USB vendor ID", rstr
+                        "Resource %s is held by an existing VISA session (NCIC) "
+                        "— skipping scan probe (row already in UI)", rstr
                     )
-                    info["idn"] = ""
-                    info["friendly"] = self._friendly_name(rstr, "")
-                    info["is_smu"] = True
-                    results.append(info)
                 else:
                     log.debug("Cannot open resource %s: %s", rstr, exc)
                 continue
@@ -212,6 +233,19 @@ class VISAManager:
                 continue
 
             log.info("Found: %s  IDN=%r", rstr, idn)
+
+            # IDN-based deduplication: if another resource string already returned
+            # this exact IDN (same model + serial), this is the same physical
+            # instrument on a different interface (e.g., USB and GPIB simultaneously,
+            # or two USB alias strings).  Keep only the first occurrence.
+            if idn in seen_idns:
+                log.info(
+                    "Skipping %s — duplicate IDN already seen from another resource",
+                    rstr,
+                )
+                continue
+            seen_idns.add(idn)
+
             info["idn"] = idn
             info["friendly"] = self._friendly_name(rstr, idn)
             # is_smu: Keithley USB vendor ID takes priority over IDN content

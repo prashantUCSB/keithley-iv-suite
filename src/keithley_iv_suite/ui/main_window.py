@@ -18,8 +18,8 @@ from ..instruments.visa_manager import VISAManager
 from ..measurements.queue_manager import MeasurementQueue, QueueItemStatus
 from ..measurements.recipe_loader import load_recipe
 from ..measurements.sweep_config import (
-    Generic4PortConfig, HallBarConfig, OutputConfig, ResistorConfig,
-    SweepConfig, TransferConfig, VanDerPauwConfig,
+    FourPointProbeConfig, Generic4PortConfig, HallBarConfig, OutputConfig,
+    ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
 )
 from ..data.exporter import export_csv, default_filename
 from .panels import InstrumentPanel, SweepPanel, PlotPanel, QueuePanel
@@ -514,6 +514,8 @@ class MainWindow(QMainWindow):
             return config.i_points
         if isinstance(config, Generic4PortConfig):
             return config.v_points
+        if isinstance(config, FourPointProbeConfig):
+            return config.i_points
         return 0
 
     def _show_about(self):

@@ -2,6 +2,7 @@
 import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from keithley_iv_suite.ui.main_window import MainWindow
 
 
@@ -38,6 +39,10 @@ def main() -> int:
     app.setOrganizationName("prashantUCSB")
 
     _apply_dpi_font_scale(app)
+
+    font = app.font()
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    app.setFont(font)
 
     window = MainWindow()
     window.show()

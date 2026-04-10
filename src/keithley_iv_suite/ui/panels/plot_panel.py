@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 
 from .. import theme
 from ...measurements.sweep_config import (
-    Generic4PortConfig, HallBarConfig, MeasurementType,
+    FourPointProbeConfig, Generic4PortConfig, HallBarConfig, MeasurementType,
     OutputConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
 )
 
@@ -57,6 +57,10 @@ _AXIS_CONFIG: dict[MeasurementType, tuple[str, str, str, str]] = {
     MeasurementType.GENERIC_4PORT: (
         "<i>V</i><sub>T1</sub>", "V",
         "<i>I</i><sub>T1</sub>", "A",
+    ),
+    MeasurementType.FOUR_POINT_PROBE: (
+        "<i>I</i><sub>force</sub>",   "A",
+        "<i>V</i><sub>sense</sub>",   "V",
     ),
 }
 
@@ -658,6 +662,8 @@ class PlotPanel(QWidget):
             self._overlay_vdp()
         elif mt == MeasurementType.HALL_BAR:
             self._overlay_hall()
+        elif mt == MeasurementType.FOUR_POINT_PROBE:
+            self._overlay_fpp()
         # Output / Generic 4-port: curves are self-explanatory
 
     def _overlay_resistor(self):
@@ -915,6 +921,65 @@ class PlotPanel(QWidget):
         )
         self.params_updated.emit({"gd_max": abs(1.0 / R_xx) if abs(R_xx) > 0 else 0.0})
 
+    def _overlay_fpp(self):
+        """Fit line (V vs I) for four-point probe; annotate Rs, ρ, R²."""
+        active = self._active_data()
+        cur = {cid: d for cid, d in active.items()
+               if cid in self._current_sweep_cids} or active
+        i_all = np.concatenate([np.array(xs) for xs, _ in cur.values()])
+        v_all = np.concatenate([np.array(ys) for _, ys in cur.values()])
+        if len(i_all) < 2 or np.ptp(i_all) == 0:
+            return
+
+        m, b = np.polyfit(i_all, v_all, 1)
+        R_transfer = float(m)
+        v_pred = m * i_all + b
+        ss_res = float(np.sum((v_all - v_pred) ** 2))
+        ss_tot = float(np.sum((v_all - v_all.mean()) ** 2))
+        r_sq   = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+
+        _C4PP = np.pi / np.log(2)
+        cfg = self._config
+        correction_F = getattr(cfg, "correction_F", 1.0)
+        Rs = _C4PP * R_transfer * correction_F
+
+        thickness_m = getattr(cfg, "thickness_m", None)
+        rho = Rs * thickness_m if (thickness_m is not None and not np.isnan(Rs)) else float("nan")
+
+        # Fit line
+        pad   = (i_all.max() - i_all.min()) * 0.15
+        i_ext = np.linspace(i_all.min() - pad, i_all.max() + pad, 200)
+        fit_line = self._pw.plot(
+            i_ext * self._x_scale,
+            (m * i_ext + b) * self._y_scale,
+            pen=pg.mkPen(self._overlay_line_color, width=2,
+                         style=Qt.PenStyle.DashLine),
+        )
+        self._overlay_items.append(fit_line)
+
+        body = (f"R<sub>transfer</sub> = {_fmt_si(R_transfer, 'Ω')}"
+                f"<br>R<sub>s</sub> = {_fmt_si(Rs, 'Ω/□')}"
+                f"<br>R² = {r_sq:.6f}")
+        if not np.isnan(rho):
+            body += f"<br>ρ = {_fmt_si(rho, 'Ω·m')}"
+
+        ann = DraggableText(html=_annot(body), anchor=(0.0, 1.0))
+        self._pw.addItem(ann)
+        self._overlay_items.append(ann)
+        ann.setPos(float(i_ext[10]) * self._x_scale,
+                   float((m * i_ext + b).max()) * self._y_scale)
+
+        visible = self._fit_visible_chk.isChecked()
+        fit_line.setVisible(visible)
+        ann.setVisible(visible)
+
+        eq = (f"R_transfer = {_fmt_si(R_transfer, 'Ω')}   "
+              f"Rs = {_fmt_si(Rs, 'Ω/□')}   R² = {r_sq:.6f}")
+        if not np.isnan(rho):
+            eq += f"   ρ = {_fmt_si(rho, 'Ω·m')}"
+        self._eq_lbl.setText(eq)
+        self.params_updated.emit({"R": Rs, "R_sq": r_sq})
+
     # ── Style toolbar ──────────────────────────────────────────────────────
 
     def _on_curve_clicked(self, cid: int | None):
@@ -1055,6 +1120,8 @@ class PlotPanel(QWidget):
             return max(abs(config.i_start), abs(config.i_stop), 1e-9)
         if isinstance(config, Generic4PortConfig):
             return max(abs(config.v_start), abs(config.v_stop), 0.01)
+        if isinstance(config, FourPointProbeConfig):
+            return max(abs(config.i_start), abs(config.i_stop), 1e-9)
         return 1.0
 
     @staticmethod
@@ -1070,6 +1137,8 @@ class PlotPanel(QWidget):
             return config.i_start, config.i_stop
         if isinstance(config, Generic4PortConfig):
             return config.v_start, config.v_stop
+        if isinstance(config, FourPointProbeConfig):
+            return config.i_start, config.i_stop
         return -1.0, 1.0
 
     @staticmethod
@@ -1080,4 +1149,6 @@ class PlotPanel(QWidget):
             return config.compliance_V   # y-axis = voltage
         if isinstance(config, Generic4PortConfig):
             return config.compliance_A
+        if isinstance(config, FourPointProbeConfig):
+            return config.compliance_V   # y-axis = voltage
         return config.compliance_drain_A
