@@ -230,14 +230,27 @@ class InstrumentPanel(QWidget):
         manual_layout = QFormLayout(manual_box)
         manual_layout.setSpacing(4)
         self._manual_addr = QLineEdit()
-        self._manual_addr.setPlaceholderText("GPIB0::24::INSTR  or  USB0::...")
+        self._manual_addr.setPlaceholderText(
+            "GPIB0::24::INSTR   USB0::0x05E6::0x2400::...::INSTR   ASRL3::INSTR"
+        )
+        self._manual_addr.textChanged.connect(self._on_manual_addr_changed)
         self._manual_model = QComboBox()
         self._manual_model.addItems(["2400", "2401", "2602", "2602A", "2614B"])
         self._manual_id = QLineEdit()
         self._manual_id.setPlaceholderText("Label (optional)")
+        # Baud rate — only relevant for RS-232 (ASRL); hidden otherwise
+        self._manual_baud = QComboBox()
+        for b in ("9600", "19200", "38400", "57600", "4800", "2400", "1200"):
+            self._manual_baud.addItem(b, int(b))
+        self._manual_baud.setCurrentIndex(0)   # 9600 default
+        self._manual_baud_row_lbl = QLabel("Baud rate:")
         manual_layout.addRow("Address:", self._manual_addr)
         manual_layout.addRow("Model:", self._manual_model)
         manual_layout.addRow("Label:", self._manual_id)
+        manual_layout.addRow(self._manual_baud_row_lbl, self._manual_baud)
+        # Hide baud row until user types an ASRL address
+        self._manual_baud_row_lbl.setVisible(False)
+        self._manual_baud.setVisible(False)
         add_btn = QPushButton("Add")
         add_btn.clicked.connect(self._on_manual_add)
         manual_layout.addRow("", add_btn)
@@ -351,16 +364,24 @@ class InstrumentPanel(QWidget):
                 + (f" ({new_count} new)." if new_count else " (already listed).")
             )
 
+    def _on_manual_addr_changed(self, text: str) -> None:
+        """Show the baud-rate selector only when the address looks like RS-232."""
+        is_serial = text.strip().upper().startswith("ASRL")
+        self._manual_baud_row_lbl.setVisible(is_serial)
+        self._manual_baud.setVisible(is_serial)
+
     def _on_manual_add(self):
         rstr = self._manual_addr.text().strip()
         if not rstr:
             return
         model = self._manual_model.currentText()
         label = self._manual_id.text().strip() or f"Keithley {model}"
+        baud  = self._manual_baud.currentData() if rstr.upper().startswith("ASRL") else None
         info = {
             "resource_string": rstr, "interface": "Manual",
             "address": rstr, "friendly": label,
             "idn": "", "model_hint": model, "is_smu": True,
+            "baud_rate": baud,
         }
         self._resources[rstr] = info
         if rstr not in self._rows:
@@ -399,13 +420,21 @@ class InstrumentPanel(QWidget):
         row.setEnabled(False)
         self._status_lbl.setText(f"Connecting to {resource_string}…")
 
+        is_serial = resource_string.upper().startswith("ASRL")
+        baud_rate  = info.get("baud_rate")  # set by manual-add for ASRL resources
+
         try:
             # Retry opening the resource once — handles the case where the
             # instrument is momentarily busy after a prior scan or disconnect.
             res = None
             for attempt in range(2):
                 try:
-                    res = self._vm.open_resource(resource_string)
+                    if is_serial and baud_rate:
+                        res = self._vm.open_resource_serial(
+                            resource_string, baud_rate=baud_rate
+                        )
+                    else:
+                        res = self._vm.open_resource(resource_string)
                     break
                 except pyvisa.errors.VisaIOError as exc:
                     if attempt == 0:
@@ -415,13 +444,14 @@ class InstrumentPanel(QWidget):
                         raise
 
             # Clear the VISA interface before querying — for USBTMC this sends
-            # INITIATE_CLEAR which flushes any stale measurement data from the
-            # instrument's output buffer (e.g. a previous sweep's last reading).
-            try:
-                res.clear()
-                time.sleep(0.05)
-            except Exception:
-                pass
+            # INITIATE_CLEAR which flushes any stale measurement data.
+            # RS-232 resources do not support viClear(); skip it for them.
+            if not is_serial:
+                try:
+                    res.clear()
+                    time.sleep(0.05)
+                except Exception:
+                    pass
 
             # Query *IDN? — retry once on timeout (instrument may be processing
             # a previous command from the scan).

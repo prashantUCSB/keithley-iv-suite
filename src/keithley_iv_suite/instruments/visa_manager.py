@@ -273,7 +273,50 @@ class VISAManager:
         res.timeout = timeout_ms
         res.read_termination = read_termination
         res.write_termination = write_termination
+
+        # RS-232 (ASRL) resources need serial parameters set before any I/O.
+        # Keithley 2400/2401 factory defaults: 9600 8N1, no flow control.
+        # Users who have changed the front-panel baud must match it here —
+        # see visa_manager.open_resource_serial() for an explicit-baud variant.
+        if resource_string.upper().startswith("ASRL"):
+            self._configure_serial(res)
+
         return res
+
+    def open_resource_serial(
+        self,
+        resource_string: str,
+        baud_rate: int = 9600,
+        timeout_ms: int = 10000,
+    ) -> pyvisa.resources.Resource:
+        """Open an RS-232 resource with explicit baud rate.
+
+        Use this instead of open_resource() when the 2400/2401 front-panel
+        baud rate has been changed from the factory default of 9600.
+        """
+        res = self._rm.open_resource(  # type: ignore[union-attr]
+            resource_string, open_timeout=timeout_ms
+        )
+        res.timeout = timeout_ms
+        res.read_termination  = "\n"
+        res.write_termination = "\n"
+        self._configure_serial(res, baud_rate=baud_rate)
+        return res
+
+    @staticmethod
+    def _configure_serial(
+        res: pyvisa.resources.Resource,
+        baud_rate: int = 9600,
+    ) -> None:
+        """Apply RS-232 settings compatible with Keithley 2400/2401 defaults."""
+        import pyvisa.constants as vc
+        res.baud_rate    = baud_rate
+        res.data_bits    = 8
+        res.stop_bits    = vc.StopBits.one
+        res.parity       = vc.Parity.none
+        res.flow_control = vc.ControlFlow.none
+        log.debug("Serial configured: %d 8N1 no-flow on %s", baud_rate,
+                  getattr(res, "resource_name", "?"))
 
     def close(self) -> None:
         if self._rm:
@@ -314,6 +357,12 @@ class VISAManager:
             parts = rstr.split("::")
             ip = parts[1] if len(parts) > 1 else "?"
             return {"resource_string": rstr, "interface": "Ethernet", "address": f"LAN · {ip}"}
+        if upper.startswith("ASRL"):
+            # ASRL3::INSTR  →  "COM3" on Windows, "/dev/ttyUSB0" on Linux
+            parts = rstr.split("::")
+            port = parts[0][4:]  # strip "ASRL"
+            label = f"COM{port}" if port.isdigit() else port
+            return {"resource_string": rstr, "interface": "RS-232", "address": f"Serial · {label}"}
         return {"resource_string": rstr, "interface": "Unknown", "address": rstr}
 
     @staticmethod
