@@ -109,6 +109,10 @@ a = Analysis(
 
         # ── yaml ──────────────────────────────────────────────────────────────
         "yaml",
+
+        # ── keithley_iv_suite.data ────────────────────────────────────────────
+        "keithley_iv_suite.data",
+        "keithley_iv_suite.data.exporter",
     ],
     hookspath=[],
     hooksconfig={},
