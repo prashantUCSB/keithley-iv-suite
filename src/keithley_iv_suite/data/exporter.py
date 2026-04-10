@@ -159,10 +159,11 @@ def _write_4pp(writer: csv.writer, result: dict) -> None:
         if key in result:
             val = result[key]
             writer.writerow([f"# {key}: {val:.6g}" if isinstance(val, float) else f"# {key}: {val}"])
-    i_ = result["i_forced"]
+    i_forced = result["i_forced"]
+    i_actual = result.get("i_actual", np.full_like(i_forced, float("nan")))
     v_ = result["v_sense"]
-    writer.writerow(["i_forced_A", "v_sense_V"])
-    for row in zip(i_, v_):
+    writer.writerow(["i_forced_A", "i_actual_A", "v_sense_V"])
+    for row in zip(i_forced, i_actual, v_):
         writer.writerow([_fmt(v) for v in row])
 
 

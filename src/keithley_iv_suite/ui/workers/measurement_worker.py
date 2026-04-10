@@ -160,11 +160,9 @@ class MeasurementWorker(QThread):
         if mtype == MeasurementType.FOUR_POINT_PROBE:
             assert isinstance(cfg, FourPointProbeConfig)
             i_smu = self._resolve("i_plus", cfg)
-            v_smu = self._resolve("v_plus", cfg)
             return run_four_point_probe(
                 config=cfg,
                 i_smu=i_smu,
-                v_smu=v_smu,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
                 data_cb=lambda i, v, vs, ci: self.data_point.emit(i, v, vs, ci),
                 abort_flag=self._abort_flag,
