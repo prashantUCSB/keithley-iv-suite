@@ -16,6 +16,24 @@ _IDX_VOLT = 0
 _IDX_CURR = 1
 
 
+def _scpi_float(token: str) -> float:
+    """Parse a SCPI numeric token, handling IEEE 488.2 special values.
+
+    The 2400 returns ``<nan>`` (angle-bracket form) or ``9.91000E+37``
+    (Keithley overflow sentinel) for invalid / out-of-range readings.
+    Python's ``float()`` rejects the angle-bracket form; this wrapper
+    strips them and maps all NaN representations to ``float('nan')``.
+    """
+    t = token.strip()
+    # Strip angle brackets used by some Keithley firmware: <nan>, <inf>
+    if t.startswith("<") and t.endswith(">"):
+        t = t[1:-1]
+    try:
+        return float(t)
+    except ValueError:
+        return float("nan")
+
+
 class SMU2400(SMUBase):
     """
     Drives the Keithley 2400 or 2401 via standard SCPI.
@@ -155,11 +173,22 @@ class SMU2400(SMUBase):
         self._output_on = False
 
     def measure_iv(self) -> tuple[float, float]:
-        """Return (current_A, voltage_V)."""
+        """Return (current_A, voltage_V).
+
+        The 2400 can return IEEE 488.2 special-value tokens such as ``<nan>``
+        or ``9.91000E+37`` (Keithley overflow sentinel) for invalid readings
+        (e.g. open Sense leads in RSEN mode, compliance hit).  These are
+        converted to ``float('nan')`` so callers can detect and skip them.
+        """
         raw = self._query(":READ?")
-        values = [float(x) for x in raw.split(",")]
+        values = [_scpi_float(x) for x in raw.split(",")]
         voltage = values[_IDX_VOLT]
         current = values[_IDX_CURR]
+        if not (abs(voltage) < 9.9e37) or not (abs(current) < 9.9e37):
+            log.warning(
+                "SMU2400 measure_iv: overflow/NaN reading (raw=%r). "
+                "Check Sense-terminal connections for RSEN mode.", raw
+            )
         return current, voltage
 
     # ------------------------------------------------------------------
@@ -185,8 +214,6 @@ class SMU2400(SMUBase):
     def in_compliance(self) -> bool:
         """Return True if the instrument is at its compliance limit."""
         raw = self._query(":READ?")
-        values = [float(x) for x in raw.split(",")]
-        # Status word is the 5th element when :FORM:ELEM is VOLT,CURR (not present)
-        # Check by comparing |I| to compliance threshold
+        values = [_scpi_float(x) for x in raw.split(",")]
         current = abs(values[_IDX_CURR])
         return current >= self._compliance * 0.999
