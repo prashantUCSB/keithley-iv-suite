@@ -1,36 +1,43 @@
 """Collinear four-point probe sheet-resistance measurement.
 
 Probe numbering (Valdes 1954 / Smits 1958 convention):
-    [1]  Force Hi  outer current probe
-    [2]  Sense Hi  inner voltage probe
-    [3]  Sense Lo  inner voltage probe
-    [4]  Force Lo  outer current probe
+    [1]  outer  I+ probe
+    [2]  inner  V+ probe
+    [3]  inner  V− probe
+    [4]  outer  I− probe
 
-Single-SMU algorithm (4-wire Kelvin / RSEN mode):
-    A SINGLE current-source SMU is used with 4-wire remote sensing enabled.
-    The Force terminals (Hi/Lo) carry current through the outer probes (1, 4).
-    The Sense terminals (Hi/Lo) measure voltage at the inner probes (2, 3).
+Two measurement modes are supported automatically:
 
-    Wiring to a single SMU (e.g. Keithley 2400 with SYST:RSEN ON):
-        Force Hi → probe 1 (outer, I+)
-        Sense Hi → probe 2 (inner, V+)
-        Sense Lo → probe 3 (inner, V−)
-        Force Lo → probe 4 (outer, I−)
+Mode A — Two-SMU (recommended when a separate voltmeter instrument is available)
+    i_smu forces current via its Force Hi/Lo (outer probes 1 & 4).
+    v_smu is configured as a high-impedance voltmeter (0 A source) and
+    connected to inner probes 2 & 3 via its Force Hi/Lo.
+    No RSEN required.
+
+        i_smu Force Hi → probe 1 (outer, I+)
+        i_smu Force Lo → probe 4 (outer, I−)
+        v_smu Force Hi → probe 2 (inner, V+)
+        v_smu Force Lo → probe 3 (inner, V−)
+
+Mode B — Single-SMU RSEN (when only one instrument is available)
+    A SINGLE SMU is used with 4-wire remote sensing (SYST:RSEN ON).
+    Force terminals carry current (outer probes); Sense terminals read
+    voltage (inner probes).
+
+        i_smu Force Hi → probe 1 (outer, I+)
+        i_smu Sense Hi → probe 2 (inner, V+)
+        i_smu Sense Lo → probe 3 (inner, V−)
+        i_smu Force Lo → probe 4 (outer, I−)
+
+    Mode B is selected when v_smu is None or the same object as i_smu.
 
 Sheet resistance formula (Valdes 1954):
-    Rs = (π / ln 2) × (V_sense / I_force) × F_correction
+    Rs = (π / ln 2) × (V_sense / I_actual) × F_correction
        = 4.5324 × (V / I) × F_correction    [Ω/□]
 
-Measurement procedure:
-    1. Enable 4-wire remote sensing on the SMU (SYST:RSEN ON).
-    2. Sweep current symmetrically (−I_max → +I_max).
-    3. Record V_sense (inner probe voltage) and I_actual at each step.
-    4. Compute Rs per-point: Rs_i = (π/ln2) × (V_i / I_i) × F.
-    5. Final Rs = mean(Rs_i) over all valid (non-zero I) points.
-
-The symmetric sweep cancels thermoelectric offsets (Seebeck voltages): because
-positive and negative current measurements both contribute to the mean, a
-constant additive voltage offset cancels in the average.
+Both modes compute Rs per-point using the ACTUAL measured current (not
+the commanded setpoint) and then average, matching the working reference
+algorithm.
 """
 from __future__ import annotations
 
@@ -46,89 +53,103 @@ from .sweep_config import FourPointProbeConfig
 
 log = logging.getLogger(__name__)
 
-# Rs = C4PP × (V/I)   (semi-infinite thin film, collinear equally-spaced probes)
-_C4PP = np.pi / np.log(2)   # ≈ 4.5324
-
-_EPSILON = 1e-12   # minimum |I_actual| to compute V/I ratio safely
+_C4PP    = np.pi / np.log(2)   # ≈ 4.5324
+_EPSILON = 1e-12                # minimum |I_actual| to compute V/I safely
 
 
 def run_four_point_probe(
     config: FourPointProbeConfig,
     i_smu: SMUBase,
-    v_smu: Optional[SMUBase] = None,   # not used — kept for API compatibility
+    v_smu: Optional[SMUBase] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
     data_cb: Optional[Callable[[float, float, float, int], None]] = None,
     abort_flag: Optional[list[bool]] = None,
 ) -> dict:
     """Execute a four-point probe sheet-resistance measurement.
 
-    Uses a single SMU in 4-wire (Kelvin) remote-sense mode.  The SMU must
-    be wired so that its Force terminals drive the outer probes and its Sense
-    terminals are connected to the inner probes:
-
-        Force Hi → probe 1,  Sense Hi → probe 2
-        Force Lo → probe 4,  Sense Lo → probe 3
+    Automatically selects two-SMU mode when *v_smu* is a different object
+    from *i_smu*, otherwise falls back to single-SMU RSEN mode.
 
     Parameters
     ----------
     config      : FourPointProbeConfig
-    i_smu       : current-source SMU with 4-wire remote sensing (RSEN ON).
-    v_smu       : ignored (retained for backward compatibility).
+    i_smu       : current-source SMU (always required — outer probes).
+    v_smu       : voltmeter SMU (inner probes).  Pass None or the same
+                  object as i_smu to use single-SMU RSEN mode.
     progress_cb : called with (step, total)
     data_cb     : called with (i_actual, v_sense, v_sense, curve_id=0)
     abort_flag  : list[bool]; set [0]=True to abort early
 
     Returns
     -------
-    dict
-        i_forced   : np.ndarray  — commanded current values (A)
-        i_actual   : np.ndarray  — measured actual current values (A)
-        v_sense    : np.ndarray  — inner-probe voltage (V)
-        R_transfer : float       — mean V_sense / I_actual (Ω)
-        Rs         : float       — mean sheet resistance (Ω/□)
-        rho        : float | nan — resistivity ρ = Rs × t (Ω·m); NaN if no thickness
-        R_sq       : float       — R² of the V vs I linear fit (quality metric)
-        config     : FourPointProbeConfig
+    dict with keys: i_forced, i_actual, v_sense, R_transfer, Rs, rho,
+                    R_sq, config
     """
     if abort_flag is None:
         abort_flag = [False]
 
+    _use_rsen = (v_smu is None or v_smu is i_smu)
+    mode_label = "RSEN single-SMU" if _use_rsen else "two-SMU"
+
     i_list = config.i_list()
     n_pts  = len(i_list)
 
-    # ── Configure SMU in 4-wire Kelvin remote-sensing mode ─────────────────
-    i_smu.reset()
-    i_smu.set_sense_mode(remote=True)   # SYST:RSEN ON — Sense terminals read inner probes
-    # Brief settle after RSEN ON: some 2400 firmware performs an internal
-    # zeroing/cal step when switching sense mode that can block the next
-    # VISA write if issued too quickly.
-    time.sleep(0.5)
-    # Use an explicit sense range rather than auto-range.  Auto-range with
-    # RSEN ON can cause the instrument to loop indefinitely searching for the
-    # correct range on the sense path (especially if sense leads have not yet
-    # settled), triggering a VISA timeout.  compliance_V is a safe upper bound.
-    _sense_range = config.sense_range_V if config.sense_range_V is not None \
-        else config.compliance_V
-    i_smu.configure_current_source(
-        compliance_voltage=config.compliance_V,
-        current_range=config.source_range_A,
-        sense_range_v=_sense_range,
-        nplc=config.nplc,
-        source_delay_s=config.source_delay_s,
-    )
-    i_smu.set_current(i_list[0])
-    i_smu.output_on()
-    time.sleep(config.settling_delay_s * 2)
-
-    i_f_data: list[float] = []   # commanded current
-    i_a_data: list[float] = []   # actual measured current
-    v_s_data: list[float] = []   # sense voltage (inner probes via RSEN)
-
     log.info(
-        "4PP sweep: I %.2e→%.2e A (%d pts), F=%.4f, Vlim=%.1f V (RSEN ON)",
-        config.i_start, config.i_stop, n_pts,
+        "4PP sweep: %s mode, I %.2e→%.2e A (%d pts), F=%.4f, Vlim=%.1f V",
+        mode_label, config.i_start, config.i_stop, n_pts,
         config.correction_F, config.compliance_V,
     )
+
+    # ── Instrument setup ────────────────────────────────────────────────────
+    if _use_rsen:
+        # Mode B: single SMU, RSEN ON
+        i_smu.reset()
+        i_smu.set_sense_mode(remote=True)
+        # Brief settle — some 2400 firmware performs an internal zeroing step
+        # after SYST:RSEN ON that blocks the next VISA write if sent too quickly.
+        time.sleep(0.5)
+        # Use an explicit sense range instead of AUTO: auto-range on a freshly
+        # enabled RSEN path can loop indefinitely and exhaust the VISA timeout.
+        _sense_range = config.sense_range_V if config.sense_range_V is not None \
+            else config.compliance_V
+        i_smu.configure_current_source(
+            compliance_voltage=config.compliance_V,
+            current_range=config.source_range_A,
+            sense_range_v=_sense_range,
+            nplc=config.nplc,
+            source_delay_s=config.source_delay_s,
+        )
+        i_smu.set_current(i_list[0])
+        i_smu.output_on()
+        time.sleep(config.settling_delay_s * 2)
+
+    else:
+        # Mode A: two separate SMUs
+        i_smu.reset()
+        i_smu.configure_current_source(
+            compliance_voltage=config.compliance_V,
+            current_range=config.source_range_A,
+            nplc=config.nplc,
+            source_delay_s=config.source_delay_s,
+        )
+        i_smu.set_current(i_list[0])
+        i_smu.output_on()
+        time.sleep(config.settling_delay_s * 2)
+
+        v_smu.reset()
+        v_smu.configure_voltmeter(
+            compliance_voltage=config.compliance_V,
+            sense_range_v=config.sense_range_V,
+            nplc=config.nplc,
+            source_delay_s=config.source_delay_s,
+        )
+        v_smu.output_on()
+        time.sleep(config.settling_delay_s)
+
+    # ── Sweep ────────────────────────────────────────────────────────────────
+    i_f_data: list[float] = []
+    i_a_data: list[float] = []
+    v_s_data: list[float] = []
 
     try:
         for idx, i_cmd in enumerate(i_list):
@@ -139,8 +160,13 @@ def run_four_point_probe(
             i_smu.set_current(i_cmd)
             time.sleep(config.settling_delay_s)
 
-            # With RSEN ON: measure_iv() → (I_force_actual, V_sense_inner)
-            i_actual, v_sense = i_smu.measure_iv()
+            if _use_rsen:
+                # RSEN ON: measure_iv() returns (I_force_actual, V_sense_inner)
+                i_actual, v_sense = i_smu.measure_iv()
+            else:
+                # Two-SMU: i_smu gives actual current, v_smu gives inner voltage
+                i_actual, _v_ismu = i_smu.measure_iv()
+                _i_vmeas, v_sense  = v_smu.measure_iv()
 
             i_f_data.append(i_cmd)
             i_a_data.append(i_actual)
@@ -154,6 +180,8 @@ def run_four_point_probe(
     finally:
         i_smu.set_current(0.0)
         i_smu.output_off()
+        if not _use_rsen:
+            v_smu.output_off()
 
     # ── Post-processing ──────────────────────────────────────────────────────
     i_f_arr = np.array(i_f_data)
@@ -164,14 +192,14 @@ def run_four_point_probe(
     Rs         = float("nan")
     R_sq       = float("nan")
 
-    # Per-point Rs = (π/ln2) × (V_sense / I_actual) × F  — matches user's algorithm
+    # Per-point Rs = (π/ln2) × (V_sense / I_actual) × F
     valid = np.abs(i_a_arr) > _EPSILON
     if np.any(valid):
         Rs_pts     = _C4PP * (v_arr[valid] / i_a_arr[valid]) * config.correction_F
         Rs         = float(np.mean(Rs_pts))
         R_transfer = float(np.mean(v_arr[valid] / i_a_arr[valid]))
 
-    # R² from linear fit on (I_actual, V_sense) — quality/linearity metric
+    # R² from linear fit — quality/linearity metric
     if len(i_a_arr) >= 2 and np.ptp(i_a_arr) > 0:
         coeffs = np.polyfit(i_a_arr, v_arr, 1)
         m, b   = float(coeffs[0]), float(coeffs[1])
@@ -185,8 +213,8 @@ def run_four_point_probe(
            else float("nan"))
 
     log.info(
-        "4PP result: R_transfer=%.4e Ω  Rs=%.4e Ω/□  ρ=%s  R²=%.6f",
-        R_transfer, Rs,
+        "4PP result (%s): R_transfer=%.4e Ω  Rs=%.4e Ω/□  ρ=%s  R²=%.6f",
+        mode_label, R_transfer, Rs,
         f"{rho:.4e} Ω·m" if not np.isnan(rho) else "N/A",
         R_sq,
     )

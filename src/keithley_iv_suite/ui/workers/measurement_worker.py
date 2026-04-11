@@ -160,9 +160,11 @@ class MeasurementWorker(QThread):
         if mtype == MeasurementType.FOUR_POINT_PROBE:
             assert isinstance(cfg, FourPointProbeConfig)
             i_smu = self._resolve("i_plus", cfg)
+            v_smu = self._resolve_optional("v_plus", cfg)
             return run_four_point_probe(
                 config=cfg,
                 i_smu=i_smu,
+                v_smu=v_smu,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
                 data_cb=lambda i, v, vs, ci: self.data_point.emit(i, v, vs, ci),
                 abort_flag=self._abort_flag,
@@ -207,6 +209,7 @@ class MeasurementWorker(QThread):
             "source":  TerminalRole.SOURCE,
             "t2":      TerminalRole.T2,
             "t3":      TerminalRole.T3,
+            "v_plus":  TerminalRole.V_PLUS,
         }
         role = role_map.get(role_key)
         if role is None:
