@@ -99,9 +99,20 @@ def run_four_point_probe(
     # ── Configure SMU in 4-wire Kelvin remote-sensing mode ─────────────────
     i_smu.reset()
     i_smu.set_sense_mode(remote=True)   # SYST:RSEN ON — Sense terminals read inner probes
+    # Brief settle after RSEN ON: some 2400 firmware performs an internal
+    # zeroing/cal step when switching sense mode that can block the next
+    # VISA write if issued too quickly.
+    time.sleep(0.5)
+    # Use an explicit sense range rather than auto-range.  Auto-range with
+    # RSEN ON can cause the instrument to loop indefinitely searching for the
+    # correct range on the sense path (especially if sense leads have not yet
+    # settled), triggering a VISA timeout.  compliance_V is a safe upper bound.
+    _sense_range = config.sense_range_V if config.sense_range_V is not None \
+        else config.compliance_V
     i_smu.configure_current_source(
         compliance_voltage=config.compliance_V,
         current_range=config.source_range_A,
+        sense_range_v=_sense_range,
         nplc=config.nplc,
         source_delay_s=config.source_delay_s,
     )
