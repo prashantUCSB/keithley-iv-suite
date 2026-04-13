@@ -15,7 +15,7 @@
 ::
 :: REQUIREMENTS:
 ::   - .venv already created (run install_windows.bat first)
-::   - Inno Setup 6 installed from https://jrsoftware.org/isdl.php
+::   - Inno Setup 6 or 7 installed from https://jrsoftware.org/isdl.php
 :: ============================================================
 setlocal EnableDelayedExpansion
 
@@ -23,14 +23,12 @@ set "APP_DIR=%~dp0.."
 set "VENV_PY=%APP_DIR%\.venv\Scripts\python.exe"
 set "VENV_PIP=%APP_DIR%\.venv\Scripts\pip.exe"
 
-:: Inno Setup compiler — check common install locations
+:: Inno Setup compiler — check all common install locations (v6 and v7, x64 and x86)
 set "ISCC="
-if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
-    set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-)
-if exist "C:\Program Files\Inno Setup 6\ISCC.exe" (
-    set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
-)
+if exist "C:\Program Files\Inno Setup 7\ISCC.exe"       set "ISCC=C:\Program Files\Inno Setup 7\ISCC.exe"
+if exist "C:\Program Files (x86)\Inno Setup 7\ISCC.exe" set "ISCC=C:\Program Files (x86)\Inno Setup 7\ISCC.exe"
+if exist "C:\Program Files\Inno Setup 6\ISCC.exe"       set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
+if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
 echo.
 echo  ======================================================
