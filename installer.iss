@@ -21,10 +21,9 @@
 #define AppVersion   "2.0.0"
 #define AppPublisher "prashantUCSB"
 #define AppExeName   "Keithley_IV_Suite.exe"
-#define AppGUID      "{A8F3C2D1-9E4B-4F6A-B7C3-2D1E5F8A9B0C}"
 
 [Setup]
-AppId={#AppGUID}
+AppId={{A8F3C2D1-9E4B-4F6A-B7C3-2D1E5F8A9B0C}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} v{#AppVersion}
