@@ -1,0 +1,7 @@
+# Force CRLF for Windows batch/cmd files
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Unix line endings for everything else
+*       text=auto
