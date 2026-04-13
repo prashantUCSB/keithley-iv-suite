@@ -54,7 +54,7 @@ if "%ISCC%"=="" (
     echo         Then re-run this script.
     echo.
     echo         Alternatively, run scripts\build_exe.bat to get the
-    echo         portable folder version  (dist\Keithley_IV_Suite\).
+    echo         portable folder version: dist\Keithley_IV_Suite\
     popd
     pause
     exit /b 1
