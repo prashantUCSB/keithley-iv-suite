@@ -212,21 +212,17 @@ class PlotPanel(QWidget):
         root.setContentsMargins(8, 4, 8, 8)
         root.setSpacing(4)
 
-        # ── header + controls row ─────────────────────────────────────
+        # ── controls row ──────────────────────────────────────────────
         ctrl_row = QHBoxLayout()
-
-        hdr = QLabel("LIVE PLOT")
-        hdr.setProperty("role", "section")
-        ctrl_row.addWidget(hdr)
-        ctrl_row.addSpacing(16)
+        ctrl_row.setSpacing(8)
 
         # Forced / Sensed V toggle
-        axis_lbl = QLabel("X-axis:")
+        axis_lbl = QLabel("X:")
         axis_lbl.setProperty("role", "muted")
         ctrl_row.addWidget(axis_lbl)
 
-        self._forced_rb = QRadioButton("Forced V")
-        self._sensed_rb = QRadioButton("Sensed V")
+        self._forced_rb = QRadioButton("Forced")
+        self._sensed_rb = QRadioButton("Sensed")
         self._forced_rb.setChecked(True)
         self._forced_rb.setToolTip(
             "Plot commanded voltage on X axis (default for 2-wire measurements)"
@@ -241,7 +237,11 @@ class PlotPanel(QWidget):
 
         ctrl_row.addWidget(self._forced_rb)
         ctrl_row.addWidget(self._sensed_rb)
-        ctrl_row.addSpacing(16)
+
+        _vsep = QFrame()
+        _vsep.setFrameShape(QFrame.Shape.VLine)
+        _vsep.setFrameShadow(QFrame.Shadow.Sunken)
+        ctrl_row.addWidget(_vsep)
 
         # Log scale checkbox
         self._log_chk = QCheckBox("Log |I|")
@@ -249,7 +249,25 @@ class PlotPanel(QWidget):
         self._log_chk.toggled.connect(self._on_log_toggled)
         ctrl_row.addWidget(self._log_chk)
 
+        # Overlay runs — important global state, kept in the main bar
+        self._keep_overlay_chk = QCheckBox("Overlay")
+        self._keep_overlay_chk.setToolTip(
+            "Keep previous sweeps on the plot — each run gets a new color.\n"
+            "Works with Resistor IV and Transfer sweeps.\n"
+            "Clear the plot manually when done."
+        )
+        ctrl_row.addWidget(self._keep_overlay_chk)
+
         ctrl_row.addStretch()
+
+        # Style toggle — shows/hides the collapsible style strip below
+        self._style_toggle_btn = QPushButton("⚙ Style")
+        self._style_toggle_btn.setCheckable(True)
+        self._style_toggle_btn.setChecked(False)
+        self._style_toggle_btn.setToolTip("Show / hide curve style controls")
+        self._style_toggle_btn.setFixedHeight(24)
+        self._style_toggle_btn.clicked.connect(self._on_style_toggle)
+        ctrl_row.addWidget(self._style_toggle_btn)
 
         self._pts_lbl = QLabel("Ready")
         self._pts_lbl.setProperty("role", "muted")
@@ -270,6 +288,11 @@ class PlotPanel(QWidget):
         self._pw.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         root.addWidget(self._pw, stretch=1)
 
+        # Equation / params label — kept as an orphan widget (not in layout)
+        # so overlay methods can call setText() without errors.
+        # The params_updated signal feeds the status bar instead.
+        self._eq_lbl = QLabel()
+
         # ── progress ─────────────────────────────────────────────────
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
@@ -277,27 +300,19 @@ class PlotPanel(QWidget):
         self._progress.setFixedHeight(6)
         root.addWidget(self._progress)
 
-        # ── equation / params label ───────────────────────────────────
-        self._eq_lbl = QLabel("")
-        self._eq_lbl.setStyleSheet(
-            f"color:{theme.AMBER}; font-size:{theme.FONT_SIZE_SMALL}pt;"
-            f" font-family:monospace; background:{theme.BG_DEEP}; padding:4px 6px;"
-            f" border:1px solid {theme.BORDER}; border-radius:3px;"
-        )
-        self._eq_lbl.setWordWrap(True)
-        self._eq_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        root.addWidget(self._eq_lbl)
-
-        # ── style toolbar ─────────────────────────────────────────────
-        style_box = QGroupBox("Curve Style  (click a curve to select)")
-        sl = QHBoxLayout(style_box)
+        # ── collapsible style strip (hidden by default) ───────────────
+        self._style_frame = QFrame()
+        self._style_frame.setFrameShape(QFrame.Shape.NoFrame)
+        self._style_frame.setVisible(False)
+        sl = QHBoxLayout(self._style_frame)
         sl.setSpacing(6)
-        sl.setContentsMargins(6, 4, 6, 4)
+        sl.setContentsMargins(0, 2, 0, 2)
 
-        # Curve color swatch — shows the selected curve's color
-        self._color_btn = QPushButton()
-        self._color_btn.setFixedSize(56, 24)
-        self._color_btn.setToolTip("Change selected curve color")
+        # Curve color swatch
+        self._color_btn = QPushButton("Color")
+        self._color_btn.setMinimumWidth(64)
+        self._color_btn.setFixedHeight(24)
+        self._color_btn.setToolTip("Change selected curve color (click a curve first)")
         self._color_btn.clicked.connect(self._pick_color)
         sl.addWidget(self._color_btn)
 
@@ -319,21 +334,19 @@ class PlotPanel(QWidget):
         self._marker_size = QSpinBox()
         self._marker_size.setRange(1, 30)
         self._marker_size.setValue(5)
-        self._marker_size.setMinimumWidth(52)   # fits "30 ▲▼" without clipping
+        self._marker_size.setMinimumWidth(52)
         self._marker_size.valueChanged.connect(self._apply_style_size)
         sl.addWidget(self._marker_size)
 
-        # ── separator ─────────────────────────────────────────────────
         _sep1 = QFrame()
         _sep1.setFrameShape(QFrame.Shape.VLine)
         _sep1.setFrameShadow(QFrame.Shadow.Sunken)
         sl.addWidget(_sep1)
 
-        # ── Fit line controls ──────────────────────────────────────────
         sl.addWidget(QLabel("Fit:"))
         self._fit_color_btn = QPushButton()
         self._fit_color_btn.setFixedSize(24, 24)
-        self._fit_color_btn.setToolTip("Fit line color (dashed overlay)")
+        self._fit_color_btn.setToolTip("Fit line color")
         self._fit_color_btn.setStyleSheet(
             f"background:{theme.AMBER}; border-radius:3px;"
             f" border:1px solid {theme.BORDER};"
@@ -347,30 +360,13 @@ class PlotPanel(QWidget):
         self._fit_visible_chk.toggled.connect(self._on_fit_visible_toggled)
         sl.addWidget(self._fit_visible_chk)
 
-        # ── separator ─────────────────────────────────────────────────
-        _sep2 = QFrame()
-        _sep2.setFrameShape(QFrame.Shape.VLine)
-        _sep2.setFrameShadow(QFrame.Shadow.Sunken)
-        sl.addWidget(_sep2)
-
-        # ── Overlay mode ───────────────────────────────────────────────
-        self._keep_overlay_chk = QCheckBox("Overlay runs")
-        self._keep_overlay_chk.setToolTip(
-            "Keep previous sweeps on the plot — each run gets a new color.\n"
-            "Works with Resistor IV and Transfer sweeps.\n"
-            "Clear the plot manually when done."
-        )
-        sl.addWidget(self._keep_overlay_chk)
-
         sl.addStretch()
-        root.addWidget(style_box)
+        root.addWidget(self._style_frame)
 
         # ── action buttons ────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
         for text, slot in (
-            ("Export CSV",   self.export_requested.emit),
-            ("Export PNG",   self._export_png),
             ("Clear",        self.clear),
             ("⤢ Autoscale", self._autoscale_all),
         ):
@@ -379,6 +375,9 @@ class PlotPanel(QWidget):
             btn_row.addWidget(b)
         btn_row.addStretch()
         root.addLayout(btn_row)
+
+    def _on_style_toggle(self, checked: bool):
+        self._style_frame.setVisible(checked)
 
     # ── View mode / log toggle ────────────────────────────────────────────
 
@@ -998,7 +997,8 @@ class PlotPanel(QWidget):
         if self._selected_cid is None or self._selected_cid not in self._styles:
             self._color_btn.setText("Color")
             self._color_btn.setStyleSheet(
-                f"border:1px solid {theme.BORDER}; border-radius:3px;"
+                f"color:{theme.TEXT_PRIMARY}; border:1px solid {theme.BORDER};"
+                f" border-radius:3px;"
             )
             return
         s = self._styles[self._selected_cid]

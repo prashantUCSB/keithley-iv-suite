@@ -9,9 +9,9 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About Keithley IV Suite")
-        self.setFixedSize(380, 220)
+        self.setFixedSize(400, 260)
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
         layout.setContentsMargins(24, 20, 24, 20)
 
         title = QLabel("Keithley IV Suite")
@@ -21,10 +21,22 @@ class AboutDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
+        version_lbl = QLabel(f"Version {theme.VERSION}")
+        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_lbl.setStyleSheet(
+            f"font-size: 12pt; font-weight: 600; color: {theme.GREEN_BRIGHT};"
+        )
+        layout.addWidget(version_lbl)
+
         sub = QLabel("Multi-SMU IV Characterization Platform")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setStyleSheet(f"color: {theme.TEXT_SECONDARY};")
         layout.addWidget(sub)
+
+        dev_lbl = QLabel(f"Developed by {theme.DEVELOPER}")
+        dev_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_lbl.setStyleSheet(f"color: {theme.TEXT_CREDIT}; font-size: 9pt;")
+        layout.addWidget(dev_lbl)
 
         info = QLabel(
             "Supports: Keithley 2400, 2401, 2602, 2614B\n"

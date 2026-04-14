@@ -110,6 +110,16 @@ a = Analysis(
         # ── yaml ──────────────────────────────────────────────────────────────
         "yaml",
 
+        # ── openpyxl — Excel export ───────────────────────────────────────────
+        "openpyxl",
+        "openpyxl.workbook",
+        "openpyxl.worksheet",
+        "openpyxl.styles",
+        "openpyxl.utils",
+        "openpyxl.reader.excel",
+        "openpyxl.writer.excel",
+        "et_xmlfile",
+
         # ── keithley_iv_suite.data ────────────────────────────────────────────
         "keithley_iv_suite.data",
         "keithley_iv_suite.data.exporter",

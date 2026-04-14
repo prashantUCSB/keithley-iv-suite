@@ -3,15 +3,17 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QProgressBar, QSizePolicy, QSplitter, QStatusBar, QVBoxLayout,
-    QWidget,
+    QDockWidget, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+    QProgressBar, QPushButton, QSizePolicy, QSplitter, QStatusBar,
+    QVBoxLayout, QWidget,
 )
 
 from ..instruments.visa_manager import VISAManager
@@ -23,7 +25,7 @@ from ..measurements.sweep_config import (
 )
 from ..data.exporter import export_csv, default_filename
 from .panels import InstrumentPanel, SweepPanel, PlotPanel, QueuePanel
-from .workers import MeasurementWorker
+from .workers import MeasurementWorker, ExportWorker
 from . import theme
 
 log = logging.getLogger(__name__)
@@ -43,6 +45,10 @@ class MainWindow(QMainWindow):
         self._output_dir = _DEFAULT_OUTPUT_DIR
         self._queue_items_pending: list = []
         self._queue_running = False
+        # Export state — reset at each queue run
+        self._export_workers: list[ExportWorker] = []
+        self._excel_lock = threading.Lock()
+        self._current_excel_path: str = ""
 
         self._init_visa()
         self._build_ui()
@@ -97,47 +103,52 @@ class MainWindow(QMainWindow):
         self._instr_panel.instruments_changed.connect(self._on_instruments_changed)
         h_splitter.addWidget(self._instr_panel)
 
-        # ── Right: sweep+queue column  |  plot ───────────────────────────
+        # ── Right: sweep panel  |  plot ─────────────────────────────────
         right_h_split = QSplitter(Qt.Orientation.Horizontal)
         right_h_split.setChildrenCollapsible(False)
         right_h_split.setHandleWidth(4)
 
-        # Left column of right: sweep (top) + queue (bottom)
-        left_v_split = QSplitter(Qt.Orientation.Vertical)
-        left_v_split.setChildrenCollapsible(True)
-        left_v_split.setHandleWidth(4)
-
         self._sweep_panel = SweepPanel()
         self._sweep_panel.run_requested.connect(self._run_single)
         self._sweep_panel.add_to_queue_requested.connect(self._add_to_queue)
-        left_v_split.addWidget(self._sweep_panel)
-
-        self._queue_panel = QueuePanel(self._queue)
-        self._queue_panel.run_queue_requested.connect(self._run_queue)
-        self._queue_panel.stop_queue_requested.connect(self._stop_measurement)
-        left_v_split.addWidget(self._queue_panel)
-
-        # Sweep panel occupies a fixed slice; queue takes the rest.
-        left_v_split.setSizes([440, 480])
-        left_v_split.setStretchFactor(0, 0)   # sweep — doesn't grow
-        left_v_split.setStretchFactor(1, 1)   # queue — expands
 
         # Plot panel: occupies the bulk of the horizontal space.
         self._plot_panel = PlotPanel()
         self._plot_panel.export_requested.connect(self._export_last_result)
         self._plot_panel.params_updated.connect(self._on_params_updated)
 
-        right_h_split.addWidget(left_v_split)
+        right_h_split.addWidget(self._sweep_panel)
         right_h_split.addWidget(self._plot_panel)
         right_h_split.setSizes([370, 830])
-        right_h_split.setStretchFactor(0, 0)   # left column — doesn't grow
-        right_h_split.setStretchFactor(1, 1)   # plot         — expands
+        right_h_split.setStretchFactor(0, 0)   # sweep — doesn't grow
+        right_h_split.setStretchFactor(1, 1)   # plot  — expands
 
         h_splitter.addWidget(right_h_split)
         h_splitter.setSizes([300, 1200])
         h_splitter.setStretchFactor(0, 0)   # instruments — doesn't grow
         h_splitter.setStretchFactor(1, 1)   # right area  — expands
         main_layout.addWidget(h_splitter, stretch=1)
+
+        # ── Queue dock widget (floating by default) ──────────────────────
+        self._queue_panel = QueuePanel(self._queue)
+        self._queue_panel.run_queue_requested.connect(self._run_queue)
+        self._queue_panel.stop_queue_requested.connect(self._stop_measurement)
+        self._queue_panel.item_removed.connect(
+            lambda name: self._set_status(f"Removed '{name}' from queue")
+        )
+
+        self._queue_dock = QDockWidget("Measurement Queue", self)
+        self._queue_dock.setWidget(self._queue_panel)
+        self._queue_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        self._queue_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        # Register with main window so docking is possible, then float it
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._queue_dock)
+        self._queue_dock.setFloating(True)
+        self._queue_dock.resize(300, 520)
 
         # ── Status bar ───────────────────────────────────────────────────
         self._build_status_bar()
@@ -164,7 +175,41 @@ class MainWindow(QMainWindow):
             f"color: {theme.TEXT_PRIMARY}; font-size: {theme.FONT_SIZE_TITLE}pt; font-weight: 700;"
         )
         layout.addWidget(title)
+
+        # Developer credit + version — always visible in the top bar
+        layout.addSpacing(16)
+        dev_lbl = QLabel(theme.DEVELOPER)
+        dev_lbl.setStyleSheet(
+            f"color: {theme.TEXT_CREDIT}; font-size: {theme.FONT_SIZE_SMALL}pt;"
+        )
+        layout.addWidget(dev_lbl)
+
+        ver_lbl = QLabel(f"v{theme.VERSION}")
+        ver_lbl.setStyleSheet(
+            f"color: {theme.GREEN_BRIGHT}; font-size: {theme.FONT_SIZE_SMALL}pt;"
+            " font-weight: 700; letter-spacing: 0.04em;"
+        )
+        layout.addWidget(ver_lbl)
+
         layout.addStretch()
+
+        # Output directory path bar — shows current dir; click to change
+        self._path_btn = QPushButton()
+        self._path_btn.setFlat(True)
+        self._path_btn.setToolTip("Output directory (click to change)")
+        self._path_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._path_btn.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-size: {theme.FONT_SIZE_SMALL}pt;"
+            "background: transparent; border: none; padding: 2px 6px;"
+        )
+        self._path_btn.clicked.connect(self._set_output_dir)
+        layout.addWidget(self._path_btn)
+        self._refresh_path_btn()
+
+        # Vertical separator
+        sep = QLabel("|")
+        sep.setStyleSheet(f"color: {theme.BORDER}; padding: 0 4px;")
+        layout.addWidget(sep)
 
         # Status indicator
         self._conn_status_lbl = QLabel("No VISA connection")
@@ -206,7 +251,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
 
         act_exit = QAction("Exit", self)
-        act_exit.setShortcut(QKeySequence("Ctrl+Q"))
+        act_exit.setShortcut(QKeySequence("Ctrl+W"))
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
 
@@ -218,7 +263,6 @@ class MainWindow(QMainWindow):
         meas_menu.addAction(act_run)
 
         act_stop = QAction("Stop", self)
-        act_stop.setShortcut(QKeySequence("Escape"))
         act_stop.triggered.connect(self._stop_measurement)
         meas_menu.addAction(act_stop)
 
@@ -226,6 +270,37 @@ class MainWindow(QMainWindow):
         act_export.setShortcut(QKeySequence("Ctrl+S"))
         act_export.triggered.connect(self._export_last_result)
         meas_menu.addAction(act_export)
+
+        # Queue
+        queue_menu = mb.addMenu("Queue")
+
+        self._act_show_queue = QAction("Show Queue", self)
+        self._act_show_queue.setCheckable(True)
+        self._act_show_queue.setChecked(True)
+        self._act_show_queue.setShortcut(QKeySequence("Ctrl+Shift+Q"))
+        self._act_show_queue.triggered.connect(
+            lambda checked: self._queue_dock.setVisible(checked)
+        )
+        queue_menu.addAction(self._act_show_queue)
+        # Keep checkmark in sync when user closes the dock via its own X button
+        # (connect after _build_ui so _queue_dock already exists)
+        queue_menu.addSeparator()
+
+        act_run_q = QAction("Run Queue", self)
+        act_run_q.setShortcut(QKeySequence("F6"))
+        act_run_q.triggered.connect(self._run_queue)
+        queue_menu.addAction(act_run_q)
+
+        act_stop_q = QAction("Stop", self)
+        act_stop_q.setShortcut(QKeySequence("Escape"))
+        act_stop_q.triggered.connect(self._stop_measurement)
+        queue_menu.addAction(act_stop_q)
+
+        queue_menu.addSeparator()
+
+        act_check_all = QAction("Check All for Export", self)
+        act_check_all.triggered.connect(self._queue_panel.check_all_export_public)
+        queue_menu.addAction(act_check_all)
 
         # View
         view_menu = mb.addMenu("View")
@@ -259,6 +334,9 @@ class MainWindow(QMainWindow):
         QApplication.instance().setStyleSheet(theme.stylesheet())
 
     def _post_init(self):
+        # Keep the Queue menu checkmark in sync with the dock's own close button
+        self._queue_dock.visibilityChanged.connect(self._act_show_queue.setChecked)
+
         if self._visa_manager is None:
             self._set_status(
                 "⚠  VISA backend not found — install NI-VISA or Keysight IO Libraries",
@@ -347,7 +425,8 @@ class MainWindow(QMainWindow):
             finished_item.status = QueueItemStatus.DONE
             finished_item.result = result
             self._queue_panel.update_item_status(finished_item.uid, QueueItemStatus.DONE)
-            self._auto_save(result, finished_item.config)
+            if self._queue_panel.is_export_checked(finished_item.uid):
+                self._trigger_export(result, finished_item.config)
             self._run_next_in_queue()
         else:
             self._queue_running = False
@@ -415,6 +494,12 @@ class MainWindow(QMainWindow):
         self._queue_items_pending = list(self._queue.pending_items())
         self._queue_running = True
         self._queue_panel.set_running(True)
+        # Prepare a fresh Excel workbook path for this queue run
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs(self._output_dir, exist_ok=True)
+        self._current_excel_path = str(Path(self._output_dir) / f"IV_Data_{ts}.xlsx")
+        self._excel_lock = threading.Lock()
+        self._export_workers.clear()
         self._run_next_in_queue()
 
     def _run_next_in_queue(self):
@@ -450,14 +535,42 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 QMessageBox.critical(self, "Export Error", str(exc))
 
-    def _auto_save(self, result: dict, config: SweepConfig):
-        try:
-            os.makedirs(self._output_dir, exist_ok=True)
-            path = default_filename(config, self._output_dir)
-            export_csv(result, path, config)
-            log.info("Auto-saved: %s", path)
-        except Exception as exc:
-            log.warning("Auto-save failed: %s", exc)
+    def _trigger_export(self, result: dict, config: SweepConfig) -> None:
+        """Capture the plot PNG in the UI thread, then launch a background export."""
+        png_bytes = self._capture_plot_png()
+        fmt = self._queue_panel.export_format
+        worker = ExportWorker(
+            result=result,
+            config=config,
+            output_dir=self._output_dir,
+            export_format=fmt,
+            png_bytes=png_bytes,
+            excel_path=self._current_excel_path if fmt in ("excel", "both") else None,
+            excel_lock=self._excel_lock,
+            parent=None,
+        )
+        worker.export_done.connect(
+            lambda p: self._set_status(f"Saved → {p}", color=theme.SUCCESS)
+        )
+        worker.export_error.connect(
+            lambda e: log.warning("Export error: %s", e)
+        )
+        # Keep reference so GC doesn't collect it before it finishes
+        self._export_workers.append(worker)
+        worker.finished.connect(lambda: self._export_workers.remove(worker)
+                                if worker in self._export_workers else None)
+        worker.start()
+
+    def _capture_plot_png(self) -> bytes:
+        """Grab the plot panel as PNG bytes (must be called from the UI thread)."""
+        from PyQt6.QtCore import QBuffer, QIODevice
+        pixmap = self._plot_panel.grab()
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        pixmap.save(buf, "PNG")
+        data = bytes(buf.data())
+        buf.close()
+        return data
 
     # ------------------------------------------------------------------
     # Recipe loading
@@ -491,7 +604,20 @@ class MainWindow(QMainWindow):
         )
         if d:
             self._output_dir = d
+            self._refresh_path_btn()
             self._set_status(f"Output directory: {d}")
+
+    def _refresh_path_btn(self):
+        """Update the top-bar path button label to show the current output dir."""
+        p = Path(self._output_dir)
+        # Show last two path components to keep the label compact
+        try:
+            parts = p.parts
+            label = str(Path(*parts[-2:])) if len(parts) >= 2 else str(p)
+        except Exception:
+            label = str(p)
+        self._path_btn.setText(f"📁 {label}")
+        self._path_btn.setToolTip(f"Output: {self._output_dir}\n(click to change)")
 
     # ------------------------------------------------------------------
     # Helpers

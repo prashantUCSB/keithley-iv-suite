@@ -5,6 +5,96 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.1.0] — 2026-04-14
+
+### Added
+
+- **Queue Export** — each queue item carries a "Save" checkbox (checked by default,
+  opt-out model). When a measurement completes, if the box is checked the result is
+  auto-saved in a background thread via `ExportWorker(QThread)`. Formats:
+  - *CSV* — one `.csv` + `.png` per measurement inside a `YYYYMMDD_HHMMSS/` subfolder
+    of the output directory.
+  - *Excel* — one `.xlsx` workbook per queue run (`IV_Data_<timestamp>.xlsx`), one
+    sheet per measurement with styled header rows, config metadata block, and data
+    columns. Thread-safe: a shared `threading.Lock` serialises concurrent sheet
+    appends.
+  - *Both* — CSV/PNG subfolder and Excel sheet in parallel.
+  A "Check All" button marks every queued item for export. The format selector
+  (CSV / Excel / Both) lives in the Queue panel.
+  ([queue_panel.py](src/keithley_iv_suite/ui/panels/queue_panel.py),
+  [export_worker.py](src/keithley_iv_suite/ui/workers/export_worker.py),
+  [exporter.py](src/keithley_iv_suite/data/exporter.py))
+
+- **SMU Wiring Guide (F1)** — in-app HTML reference dialog (`WiringGuideDialog`)
+  covering terminal nomenclature, BNC/triax wiring, screw-terminal breakout pinout,
+  2-wire vs 4-wire sense comparison, Guard at probe-tip guidance, and per-measurement
+  wiring diagrams (MOSFET, 4PP, Van der Pauw, Hall bar, resistor).
+  Accessible via Help → Wiring Guide or F1.
+  ([wiring_guide_dialog.py](src/keithley_iv_suite/ui/dialogs/wiring_guide_dialog.py),
+  [main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+- **Developer attribution** — "Prashant Srinivasan" (muted slate) and "v2.1.0"
+  (bright green `#22c55e`) are always visible in the top bar, to the right of the
+  app title. Also shown in the About dialog.
+  ([theme.py](src/keithley_iv_suite/ui/theme.py),
+  [main_window.py](src/keithley_iv_suite/ui/main_window.py),
+  [about_dialog.py](src/keithley_iv_suite/ui/dialogs/about_dialog.py))
+
+- **Output-directory path bar** — a flat button in the top bar shows the last two
+  components of the current output path (e.g. `📁 Documents/IV_Data`). Clicking it
+  opens the directory picker (same as File → Set Output Directory). Tooltip shows
+  the full path.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+- **Queue menu** — new "Queue" menu between View and Help:
+  - *Show Queue* (Ctrl+Shift+Q, checkable) — shows / hides the floating dock.
+  - *Run Queue* (F6) — starts the queue.
+  - *Stop* (Esc) — stops the running measurement.
+  - *Check All for Export* — marks every queue item for auto-save.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py))
+
+### Changed
+
+- **Queue panel → floating QDockWidget** — the queue is no longer embedded in
+  the left vertical splitter. It opens as a floating window (default 300 × 520 px)
+  that can be dragged, resized, or docked to any edge of the main window. The sweep
+  panel now occupies the full height of its column with no sharing.
+  ([main_window.py](src/keithley_iv_suite/ui/main_window.py),
+  [queue_panel.py](src/keithley_iv_suite/ui/panels/queue_panel.py))
+
+- **Queue panel UX** — removed the ↑/↓ reorder buttons (the table is scrollable).
+  "Remove Selected" now posts a status-bar message: `Removed '<name>' from queue`.
+  ([queue_panel.py](src/keithley_iv_suite/ui/panels/queue_panel.py))
+
+- **Plot panel de-clutter** — removed the "LIVE PLOT" section header, the
+  inline "Export CSV" and "Export PNG" buttons (still available in the Measurement
+  and View menus), and the equation/params label (values appear in the status bar
+  via `params_updated`). The Curve Style toolbar is now hidden by default; a "⚙ Style"
+  toggle button in the control row shows it on demand. "Overlay runs" checkbox moved
+  to the main control row for quick access.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+### Fixed
+
+- **4-wire sense mode lost after reset** — `SMUBase.reset()` sends `*RST` (2400) or
+  `smu.reset()` (2600), both of which clear the hardware sense setting. Drivers now
+  store `_remote_sense` and restore it at the end of every `reset()` call, so the
+  4W Sense button in the Instrument Panel remains effective across measurement runs.
+  ([smu_base.py](src/keithley_iv_suite/instruments/smu_base.py),
+  [smu_2400.py](src/keithley_iv_suite/instruments/smu_2400.py),
+  [smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
+
+- **Curve "Color" button invisible in dark theme** — the no-selection stylesheet
+  lacked a `color:` property, making the label text blend into the dark background.
+  Added `color:{TEXT_PRIMARY}` to the unselected state.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+- **"Color" button text clipped** — changed from `setFixedSize(56, 24)` to
+  `setMinimumWidth(64)` so the label is never truncated.
+  ([plot_panel.py](src/keithley_iv_suite/ui/panels/plot_panel.py))
+
+---
+
 ## [Unreleased]
 
 ### Fixed

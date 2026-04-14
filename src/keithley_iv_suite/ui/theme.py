@@ -1,6 +1,13 @@
 """Charcoal / amber theme — colours, fonts, and Qt stylesheet."""
 from __future__ import annotations
 
+# ── App identity ─────────────────────────────────────────────────────────────
+VERSION   = "2.1.0"
+DEVELOPER = "Prashant Srinivasan"
+
+GREEN_BRIGHT = "#22c55e"   # version badge
+TEXT_CREDIT  = "#94a3b8"   # muted slate for developer name
+
 # ── Palette ─────────────────────────────────────────────────────────────────
 BG_DEEP     = "#141414"
 BG_BASE     = "#1A1A1A"
