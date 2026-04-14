@@ -45,6 +45,7 @@ class SMUBase(ABC):
         self._resource = resource
         self._channel = channel.upper() if channel else ""
         self._connected = True
+        self._remote_sense: bool = False   # persists across reset()
 
     # ------------------------------------------------------------------
     # Connection
@@ -161,9 +162,12 @@ class SMUBase(ABC):
     def set_sense_mode(self, remote: bool) -> None:
         """Enable (True) or disable (False) 4-wire remote sensing.
 
-        Default implementation is a no-op — subclasses override if the
-        hardware supports remote sensing.
+        Stores the preference in ``_remote_sense`` so that subclass
+        ``reset()`` implementations can restore it after ``*RST`` clears
+        the hardware setting.  Subclasses should call ``super()`` then
+        send the instrument command.
         """
+        self._remote_sense = remote
 
     # ------------------------------------------------------------------
     # Helpers

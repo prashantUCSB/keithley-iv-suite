@@ -730,30 +730,49 @@ Hall voltage across the bar width under an applied magnetic field B⊥.</p>
 <h2><a name="resistor">10. Resistor I-V</a></h2>
 
 <p>A single SMU sweeps voltage and measures current through a two-terminal
-resistor (or any passive device). Use 4-wire sense for low-resistance
-devices (&lt;100 Ω) to eliminate cable resistance.</p>
+resistor (or any passive device).</p>
 
-<h3>2-wire (routine)</h3>
+<div class="note"><p>
+  <b>When to use 4W Sense:</b> only for devices below ~100 Ω, where cable
+  resistance (typically 0.5–2 Ω per wire) would introduce a measurable error.
+  For a <b>10 kΩ resistor</b> the cable error is &lt;0.02% — use <b>2-wire</b>.
+  Enabling 4W Sense on a 10 kΩ device does not improve accuracy and will cause
+  an <b>open-circuit reading</b> if your Sense HI probe is not separately
+  connected to the DUT.
+</p></div>
+
+<h3>2-wire — discrete resistor (recommended for R &gt; 100 Ω)</h3>
 <pre>
-  SMU  Force HI ──────────────┬──► +terminal
-       Force LO ──────────────┴──► −terminal
-       (Sense tied to Force at block)
+  Breakout box                        Resistor
+  ┌──────────────┐
+  │  Force HI  ──┼── BNC centre ─────────────► lead A
+  │  Force LO  ──┼── BNC centre ─────────────► lead B
+  │  Sense HI  ──┼── (leave floating, or tie to Force HI at the breakout)
+  │  Sense LO  ──┼── (leave floating, or tie to Force LO at the breakout)
+  │  Guard     ──┼── BNC outer ──────────────► (leave floating at probe end)
+  └──────────────┘
+  4W Sense button: OFF
 </pre>
 
-<h3>4-wire (Kelvin, &lt;100 Ω)</h3>
+<h3>4-wire (Kelvin) — only for R &lt; 100 Ω with separate current and voltage contacts</h3>
+<p>True 4-wire requires <i>four separate physical contacts</i> on the device
+(e.g. a thin-film bar with current pads and inner voltage taps).
+A standard 2-terminal discrete resistor cannot be measured in true 4-wire mode.</p>
 <pre>
-  SMU  Force HI  ───────────────► +terminal  (current lead)
-       Sense HI  ───────────────► +terminal  (voltage sense, separate contact)
-       Force LO  ───────────────► −terminal  (current lead)
-       Sense LO  ───────────────► −terminal  (voltage sense, separate contact)
+  SMU  Force HI  ─────────────────► contact A  (outer, carries current)
+       Sense HI  ─────────────────► contact A' (inner voltage tap, same node)
+       Force LO  ─────────────────► contact B  (outer, carries current)
+       Sense LO  ─────────────────► contact B' (inner voltage tap, same node)
+  4W Sense button: ON
 </pre>
 
 <table>
-  <tr><th>Breakout terminal</th><th>Connect to</th></tr>
-  <tr><td>Force HI</td><td>Resistor terminal A — current lead</td></tr>
-  <tr><td>Sense HI</td><td>Resistor terminal A — voltage sense (4-wire) or tie to Force HI (2-wire)</td></tr>
-  <tr><td>Sense LO</td><td>Resistor terminal B — voltage sense (4-wire) or tie to Force LO (2-wire)</td></tr>
-  <tr><td>Force LO</td><td>Resistor terminal B — current return</td></tr>
+  <tr><th>Breakout terminal</th><th>2-wire discrete R</th><th>4-wire thin-film</th></tr>
+  <tr><td>Force HI</td><td>Lead A</td><td>Current contact A</td></tr>
+  <tr><td>Sense HI</td><td>Float (or tie to Force HI at breakout)</td><td>Voltage tap A'</td></tr>
+  <tr><td>Sense LO</td><td>Float (or tie to Force LO at breakout)</td><td>Voltage tap B'</td></tr>
+  <tr><td>Force LO</td><td>Lead B</td><td>Current contact B</td></tr>
+  <tr><td>Guard</td><td>Float at probe end (see Section 2)</td><td>Float at probe end</td></tr>
 </table>
 
 <hr>

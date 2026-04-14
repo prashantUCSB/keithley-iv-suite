@@ -88,6 +88,10 @@ class SMU2400(SMUBase):
         self._write(f":SENS:CURR:NPLC {self._nplc}")
         self._write(":SENS:VOLT:NPLC 1.0")
         self._write(":DISP:ENAB ON")
+        # Restore sense mode — *RST always clears RSEN to 2-wire
+        if self._remote_sense:
+            self._write(":SYST:RSEN ON")
+            log.debug("SMU2400 reset: restored 4-wire sense (RSEN ON)")
         log.debug("SMU2400 reset complete")
 
     def configure_voltage_source(
@@ -204,6 +208,7 @@ class SMU2400(SMUBase):
 
     def set_sense_mode(self, remote: bool) -> None:
         """Enable 4-wire (remote) or 2-wire (local) sense."""
+        super().set_sense_mode(remote)   # stores in self._remote_sense
         self._write(":SYST:RSEN ON" if remote else ":SYST:RSEN OFF")
         log.debug("SMU2400 sense mode: %s", "4-wire" if remote else "2-wire")
 

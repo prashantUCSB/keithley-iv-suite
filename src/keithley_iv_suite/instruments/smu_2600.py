@@ -69,6 +69,10 @@ class SMU2600(SMUBase):
         # is nil on some firmware builds and assigning nil to a protected TSP
         # attribute raises "cannot modify table".
         self._tsp(f"{self._smu}.measure.autozero = 2")
+        # Restore sense mode — smu.reset() always clears to SENSE_LOCAL
+        if self._remote_sense:
+            self._tsp(f"{self._smu}.sense = {self._smu}.SENSE_REMOTE")
+            log.debug("SMU2600 Ch%s reset: restored 4-wire sense", self._channel)
         log.debug("SMU2600 channel %s reset complete", self._channel)
 
     def configure_voltage_source(
@@ -207,6 +211,7 @@ class SMU2600(SMUBase):
 
     def set_sense_mode(self, remote: bool) -> None:
         """Enable 4-wire (SENSE_REMOTE) or 2-wire (SENSE_LOCAL) sense."""
+        super().set_sense_mode(remote)   # stores in self._remote_sense
         mode = f"{self._smu}.SENSE_REMOTE" if remote else f"{self._smu}.SENSE_LOCAL"
         self._tsp(f"{self._smu}.sense = {mode}")
         log.debug("SMU2600 Ch%s sense mode: %s", self._channel, "4-wire" if remote else "2-wire")
