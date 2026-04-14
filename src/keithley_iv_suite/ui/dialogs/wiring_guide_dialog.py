@@ -269,6 +269,56 @@ eliminates leakage currents through the dielectric — critical when measuring r
 above ~1 MΩ.  For low-resistance work (&lt;10 kΩ) the difference is negligible and you
 can leave the shield unconnected or tie it to LO for simplicity.</p>
 
+<h3>Guard at the probe tip — single-conductor probe pin</h3>
+<p>When the BNC centre pin carries <b>Sense HI</b> (or Force HI) and the outer ring
+carries <b>Guard</b>, you have a 2-conductor cable but only a <i>single</i> conductor
+probe needle (tungsten tip, microprobe, etc.).  The question is: what do you do with
+the BNC outer ring / guard shield at the probe end?</p>
+
+<div class="note"><p>
+  <b>Leave the guard shield floating (unconnected) at the probe tip.</b>
+  Only the BNC centre pin connects to the probe needle, which contacts the device pad.
+  The outer shield is left open-circuit at that end.
+</p></div>
+
+<p>This is correct and expected — here is why:</p>
+<table>
+  <tr><th>What the shield does</th><th>Where it matters</th></tr>
+  <tr>
+    <td>Driven to HI potential by the SMU guard amplifier</td>
+    <td>Along the entire cable run — eliminates leakage through the coax insulation</td>
+  </tr>
+  <tr>
+    <td>Nothing required at the device end</td>
+    <td>A single probe needle has no outer conductor to connect the shield to</td>
+  </tr>
+</table>
+
+<p>Connecting the guard outer ring to anything at the device end — the chuck, substrate,
+or Force LO — would <b>tie the guard to the wrong potential</b> and disable it,
+introducing exactly the leakage it was designed to prevent.</p>
+
+<p>The <b>only</b> time you connect the guard shield at the device end is if your
+device has a dedicated <b>guard ring</b> structure (a metal ring surrounding the DUT pad
+on the substrate).  In that case, land the shield on the guard-ring pad to extend the
+guard all the way to the device — but this requires a triax probe or a separate
+guard-ring wire, not the single probe needle.</p>
+
+<pre>
+  BNC cable to single probe pin — correct termination
+
+  Breakout box                       Probe station
+  ┌─────────────────┐                ┌─────────────────────────┐
+  │ Sense HI ───────┼── centre pin ──┼──► probe tip → DUT pad  │
+  │                 │                │                          │
+  │ Guard   ────────┼── outer ring ──┼──► (leave floating)      │
+  └─────────────────┘                └─────────────────────────┘
+
+  Guard shields the cable run ─────────────────────────────────►
+  (reduces leakage current through coax insulation along this length)
+  At the probe tip: outer ring is open — nothing to connect to.
+</pre>
+
 <pre>
   HI-side BNC cross-section (recommended)
 
