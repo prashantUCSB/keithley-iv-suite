@@ -87,16 +87,17 @@ _HTML = (
 <p><b>Quick navigation</b></p>
 <p>
   <a href="#terminals">1. Terminal reference</a> &nbsp;·&nbsp;
-  <a href="#screw">2. Screw-terminal breakout</a> &nbsp;·&nbsp;
-  <a href="#triax">3. Triax terminal-block adapter</a> &nbsp;·&nbsp;
-  <a href="#2wire4wire">4. 2-wire vs 4-wire sense</a>
+  <a href="#bnc">2. Handmade BNC cables</a> &nbsp;·&nbsp;
+  <a href="#screw">3. Screw-terminal breakout</a> &nbsp;·&nbsp;
+  <a href="#triax">4. Triax terminal-block adapter</a> &nbsp;·&nbsp;
+  <a href="#2wire4wire">5. 2-wire vs 4-wire sense</a>
 </p>
 <p>
-  <a href="#mosfet">5. MOSFET transfer &amp; output</a> &nbsp;·&nbsp;
-  <a href="#4pp">6. Four-point probe</a> &nbsp;·&nbsp;
-  <a href="#vdp">7. Van der Pauw</a> &nbsp;·&nbsp;
-  <a href="#hall">8. Hall bar</a> &nbsp;·&nbsp;
-  <a href="#resistor">9. Resistor I-V</a>
+  <a href="#mosfet">6. MOSFET transfer &amp; output</a> &nbsp;·&nbsp;
+  <a href="#4pp">7. Four-point probe</a> &nbsp;·&nbsp;
+  <a href="#vdp">8. Van der Pauw</a> &nbsp;·&nbsp;
+  <a href="#hall">9. Hall bar</a> &nbsp;·&nbsp;
+  <a href="#resistor">10. Resistor I-V</a>
 </p>
 </div>
 
@@ -156,7 +157,140 @@ Understanding them is the key to correct wiring for any measurement.</p>
 </p></div>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="screw">2. Screw-Terminal Breakout Box</a></h2>
+<h2><a name="bnc">2. Handmade BNC Cables to the Rear-Panel Connector (2600-KIT)</a></h2>
+
+<p>The 2600-series rear panel exposes all six SMU signals through an 8-pin proprietary
+connector (Keithley Model 2600-KIT, Farnell datasheet PA-907).  Rather than using the
+kit's inverted plug and cable housing, you can solder individual BNC connectors directly
+to wires that land on the screw terminals of the plug — giving you a clean bank of
+panel-mount BNC jacks for quick probe connections.</p>
+
+<h3>Rear-panel connector pinout (2600-KIT, 8-pin)</h3>
+
+<pre>
+  Rear of instrument — connector viewed from the outside (pins face you)
+
+  ┌────────────────────────────────────────────────┐
+  │  8    7    6    5    4    3    2    1           │
+  │  ●    ●    ●    ●    ●    ●    ●    ●           │
+  │ S.HI  G    G    G    HI   G  S.LO  LO          │
+  └────────────────────────────────────────────────┘
+
+  Pin 1 — LO        (Force LO — current return)
+  Pin 2 — Sense LO  (Kelvin sense, low side)
+  Pin 3 — G         (Guard)
+  Pin 4 — HI        (Force HI — current source)
+  Pin 5 — G         (Guard)
+  Pin 6 — G         (Guard)
+  Pin 7 — G         (Guard)
+  Pin 8 — Sense HI  (Kelvin sense, high side)
+</pre>
+
+<div class="note"><p>
+  <b>Guard (G, pins 3/5/6/7)</b> is an <i>active</i> shield driven by the SMU to the
+  same potential as HI.  It is not a passive ground.  Never connect Guard to LO, Chassis,
+  or any external reference — doing so will short the guard amplifier output and can
+  damage the instrument.
+</p></div>
+
+<h3>BNC wiring table</h3>
+
+<p>A BNC connector has two conductors: the <b>centre pin</b> (signal) and the
+<b>outer shield</b> (return/screen).  Wire each BNC as follows:</p>
+
+<table>
+  <tr>
+    <th>BNC label</th>
+    <th>Centre pin → screw terminal</th>
+    <th>Outer shield → screw terminal</th>
+    <th>Purpose</th>
+  </tr>
+  <tr>
+    <td><b>Force HI</b></td>
+    <td>Pin 4 &nbsp;(HI)</td>
+    <td>Pin 3 or 5 &nbsp;(G)</td>
+    <td>Current source to device — shield is actively guarded</td>
+  </tr>
+  <tr>
+    <td><b>Sense HI</b></td>
+    <td>Pin 8 &nbsp;(Sense HI)</td>
+    <td>Pin 3 or 5 &nbsp;(G)</td>
+    <td>Kelvin voltage sense, high side — shield is actively guarded</td>
+  </tr>
+  <tr>
+    <td><b>Force LO</b></td>
+    <td>Pin 1 &nbsp;(LO)</td>
+    <td>Pin 1 &nbsp;(LO, tied to centre)</td>
+    <td>Current return — shield carries the return current as a standard coax</td>
+  </tr>
+  <tr>
+    <td><b>Sense LO</b></td>
+    <td>Pin 2 &nbsp;(Sense LO)</td>
+    <td>Pin 1 &nbsp;(LO) or leave floating</td>
+    <td>Kelvin voltage sense, low side</td>
+  </tr>
+</table>
+
+<div class="warn"><p>
+  <b>Do not tie the LO-side BNC shield to Guard (G).</b>  Guard is held near HI
+  potential; connecting it to the LO shield would short a large voltage across the
+  cable dielectric and disrupt measurement accuracy.
+</p></div>
+
+<h3>Minimum cable sets by measurement mode</h3>
+
+<table>
+  <tr>
+    <th>Mode</th>
+    <th>BNCs needed per SMU channel</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td><b>2-wire</b></td>
+    <td>Force HI + Force LO</td>
+    <td>Tie Sense HI to Force HI and Sense LO to Force LO at the device end,
+        or short pins 4↔8 and 1↔2 inside the plug before wiring out.</td>
+  </tr>
+  <tr>
+    <td><b>4-wire (Kelvin)</b></td>
+    <td>Force HI + Sense HI + Force LO + Sense LO</td>
+    <td>Run all four BNCs to separate probe contacts on the device.
+        Force pairs carry current; Sense pairs carry no current and read true DUT voltage.</td>
+  </tr>
+</table>
+
+<h3>Guarding benefit</h3>
+<p>Using Guard as the BNC shield on the HI-side cables (Force HI and Sense HI) creates
+an actively-driven coaxial cable: the shield sits at the same potential as the centre
+conductor, so there is essentially zero voltage across the cable insulation.  This
+eliminates leakage currents through the dielectric — critical when measuring resistances
+above ~1 MΩ.  For low-resistance work (&lt;10 kΩ) the difference is negligible and you
+can leave the shield unconnected or tie it to LO for simplicity.</p>
+
+<pre>
+  HI-side BNC cross-section (recommended)
+
+     ┌─────────────────────────────────┐
+     │  outer shield → G (pin 3/5)     │  driven to HI potential — no leakage
+     │  ┌───────────────────────────┐  │
+     │  │  centre pin → HI (pin 4)  │  │  Force / Sense HI signal
+     │  └───────────────────────────┘  │
+     └─────────────────────────────────┘
+
+  LO-side BNC cross-section
+
+     ┌─────────────────────────────────┐
+     │  outer shield → LO (pin 1)      │  return current path, standard coax
+     │  ┌───────────────────────────┐  │
+     │  │  centre pin → LO (pin 1)  │  │  or Sense LO (pin 2) for Kelvin
+     │  └───────────────────────────┘  │
+     └─────────────────────────────────┘
+</pre>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2><a name="screw">3. Screw-Terminal Breakout Box</a></h2>
 
 <p>A screw-terminal breakout (e.g. a custom box, the Pomona 5600 series,
 or a lab-built adapter) converts the instrument's triax or multi-pin rear
@@ -223,7 +357,7 @@ A breakout cable wired from the factory (or home-made) maps as follows:</p>
 </p></div>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="triax">3. Triax Terminal-Block Adapter</a></h2>
+<h2><a name="triax">4. Triax Terminal-Block Adapter</a></h2>
 
 <p>A triax terminal-block adapter (e.g. Keithley 8501, custom triax-to-barrier
 strip) converts a standard triax BNC/SMB connector into three screw
@@ -277,7 +411,7 @@ triax cables.</p>
 </p></div>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="2wire4wire">4. 2-Wire vs 4-Wire (Remote Sense)</a></h2>
+<h2><a name="2wire4wire">5. 2-Wire vs 4-Wire (Remote Sense)</a></h2>
 
 <table>
   <tr>
@@ -318,7 +452,7 @@ triax cables.</p>
 <hr>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="mosfet">5. MOSFET Transfer &amp; Output Curves</a></h2>
+<h2><a name="mosfet">6. MOSFET Transfer &amp; Output Curves</a></h2>
 
 <p>Two SMUs are required: one for the Gate (SMU1) and one for the
 Drain (SMU2). The Source is connected to the common LO of both SMUs.</p>
@@ -368,7 +502,7 @@ Drain (SMU2). The Source is connected to the common LO of both SMUs.</p>
 <hr>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="4pp">6. Four-Point Probe (Linear)</a></h2>
+<h2><a name="4pp">7. Four-Point Probe (Linear)</a></h2>
 
 <p>Current is forced through the two outer probes; voltage is sensed across
 the two inner probes. Two SMU channels are used: one as a current source
@@ -409,7 +543,7 @@ current source).</p>
 <hr>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="vdp">7. Van der Pauw</a></h2>
+<h2><a name="vdp">8. Van der Pauw</a></h2>
 
 <p>Four contacts at the periphery of an arbitrarily-shaped sample.
 The measurement rotates current and voltage terminals through four
@@ -447,7 +581,7 @@ permanently to SMU terminals; the software handles the switching sequence.</p>
 <hr>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="hall">8. Hall Bar</a></h2>
+<h2><a name="hall">9. Hall Bar</a></h2>
 
 <p>A Hall-bar geometry provides current along the bar length and
 Hall voltage across the bar width under an applied magnetic field B⊥.</p>
@@ -485,7 +619,7 @@ Hall voltage across the bar width under an applied magnetic field B⊥.</p>
 <hr>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<h2><a name="resistor">9. Resistor I-V</a></h2>
+<h2><a name="resistor">10. Resistor I-V</a></h2>
 
 <p>A single SMU sweeps voltage and measures current through a two-terminal
 resistor (or any passive device). Use 4-wire sense for low-resistance
