@@ -220,8 +220,10 @@ panel-mount BNC jacks for quick probe connections.</p>
   <tr>
     <td><b>Force LO</b></td>
     <td>Pin 1 &nbsp;(LO)</td>
-    <td>Pin 1 &nbsp;(LO, tied to centre)</td>
-    <td>Current return — shield carries the return current as a standard coax</td>
+    <td>Pin 1 &nbsp;(LO) <i>or</i> leave floating</td>
+    <td>Current return. Tying shield to LO establishes a defined coaxial
+        return path and sets a known shield potential; leaving it floating
+        is also acceptable and avoids any ground-loop concern.</td>
   </tr>
   <tr>
     <td><b>Sense LO</b></td>
@@ -280,8 +282,8 @@ can leave the shield unconnected or tie it to LO for simplicity.</p>
   LO-side BNC cross-section
 
      ┌─────────────────────────────────┐
-     │  outer shield → LO (pin 1)      │  return current path, standard coax
-     │  ┌───────────────────────────┐  │
+     │  outer shield → LO (pin 1)      │  optional: sets shield to LO potential;
+     │  ┌───────────────────────────┐  │  leave floating to avoid ground loops
      │  │  centre pin → LO (pin 1)  │  │  or Sense LO (pin 2) for Kelvin
      │  └───────────────────────────┘  │
      └─────────────────────────────────┘
@@ -462,13 +464,13 @@ Drain (SMU2). The Source is connected to the common LO of both SMUs.</p>
 <pre>
          SMU1 (Gate)                    SMU2 (Drain)
          ┌───────────┐                  ┌───────────┐
-         │ Force HI  ┼──────────────► Gate pad
-         │ Force LO  ┼──┐              │ Force HI  ┼──────────────► Drain pad
-         │ Sense HI  ┼──┘(tie)         │ Force LO  ┼──┐
-         │ Sense LO  ┼──┘              │ Sense HI  ┼──┘(tie)
-         └───────────┘                 │ Sense LO  ┼──┘
-                                       └───────────┘
-              Force LO ────────── Force LO ────────────► Source pad
+         │ Force HI  ┼──┬───────────► Gate pad
+         │ Sense HI  ┼──┘(tie)          │ Force HI  ┼──┬───────────► Drain pad
+         │ Force LO  ┼──┐               │ Sense HI  ┼──┘(tie)
+         │ Sense LO  ┼──┘(tie)          │ Force LO  ┼──┐
+         └───────────┘                  │ Sense LO  ┼──┘(tie)
+                                        └───────────┘
+              Force LO ──────── Force LO ─────────────► Source pad
                                                          (common GND)
 </pre>
 
