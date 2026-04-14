@@ -245,6 +245,11 @@ class MainWindow(QMainWindow):
 
         # Help
         help_menu = mb.addMenu("Help")
+        act_wiring = QAction("Wiring Guide…", self)
+        act_wiring.setShortcut(QKeySequence("F1"))
+        act_wiring.triggered.connect(self._show_wiring_guide)
+        help_menu.addAction(act_wiring)
+        help_menu.addSeparator()
         act_about = QAction("About", self)
         act_about.triggered.connect(self._show_about)
         help_menu.addAction(act_about)
@@ -517,6 +522,10 @@ class MainWindow(QMainWindow):
         if isinstance(config, FourPointProbeConfig):
             return config.i_points
         return 0
+
+    def _show_wiring_guide(self):
+        from .dialogs.wiring_guide_dialog import WiringGuideDialog
+        WiringGuideDialog(self).exec()
 
     def _show_about(self):
         from .dialogs.about_dialog import AboutDialog
