@@ -7,6 +7,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`install_windows.bat` — `. was unexpected at this time.` on VISA verify step** —
+  three separate CMD parsing bugs combined to produce this error at step [4/4]:
+
+  1. **Unescaped `)` inside an `if` block** — `echo        Falling back to
+     pyvisa-py (limited GPIB support).` was inside a parenthesized `if errorlevel 1 (...)`
+     block. CMD's batch parser does not respect double-quoted strings inside compound
+     blocks; the `)` in `(limited GPIB support)` was treated as closing the `if` block
+     early. The `.` that followed on the same line then became an unexpected token,
+     producing the error. Fixed by escaping both parens: `^(limited GPIB support^)`.
+     This is the same class of bug fixed in `build_exe.bat` on 2026-04-13
+     (commit `d5a87d0`).
+
+  2. **Inline Python `-c` with parentheses** — the original VISA check used
+     `python.exe -c "import pyvisa; rm=pyvisa.ResourceManager(); print(...); rm.close()"`.
+     The `()` in `ResourceManager()` and `rm.close()` can confuse the CMD tokenizer
+     when `EnableDelayedExpansion` is active. Extracted to a standalone helper
+     `scripts/verify_visa.py` and call it by path instead.
+
+  3. **`APP_DIR` set to a path containing `..`** — `set "APP_DIR=%~dp0.."` left a
+     literal `..` in the variable (e.g. `C:\...\scripts\..`). Replaced with the
+     `pushd "%~dp0.." / set "APP_DIR=%CD%"` pattern so `APP_DIR` is always an
+     absolute, normalized path. `popd` added before every `exit /b 1` and at end of
+     script to restore the original working directory on all paths.
+
+  Also removed non-ASCII em-dash characters (`—`) from the script header and `echo`
+  lines (replaced with `--`), which can cause misparse on systems where the console
+  code page does not match the file encoding.
+  ([scripts/install_windows.bat](scripts/install_windows.bat),
+  [scripts/verify_visa.py](scripts/verify_visa.py))
+
 ---
 
 ## [1.5.0] — 2026-04-09
