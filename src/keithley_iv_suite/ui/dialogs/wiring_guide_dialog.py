@@ -474,16 +474,72 @@ Drain (SMU2). The Source is connected to the common LO of both SMUs.</p>
                                                          (common GND)
 </pre>
 
-<h3>Screw-terminal breakout — 4-wire Drain (Kelvin)</h3>
+<h3>Screw-terminal breakout — 4-wire Kelvin (Drain)</h3>
+
+<p>Kelvin sense eliminates the resistance of the Drain and Source current leads from the
+voltage reading — critical for low-resistance devices or long cables.
+The <b>Gate stays 2-wire</b>: gate current in enhancement-mode operation is in the pA
+range, so gate lead resistance creates no measurable Vgs error.
+The <b>Source needs no dedicated SMU</b>: it is the circuit common shared by both SMU LOs.
+</p>
+
+<table>
+  <tr><th>SMU</th><th>Terminal</th><th>Device pad</th><th>Role</th></tr>
+  <tr><td rowspan="4"><b>SMU1</b><br>(Gate, 2-wire)</td>
+      <td>Force HI</td><td>Gate</td><td>Vgs source</td></tr>
+  <tr><td>Sense HI</td><td>Gate — tie to Force HI at breakout</td>
+      <td>2-wire; gate current ≈ 0, lead R irrelevant</td></tr>
+  <tr><td>Force LO</td><td>Source</td><td>Gate-bias current return</td></tr>
+  <tr><td>Sense LO</td><td>Source — tie to Force LO at breakout</td><td>2-wire</td></tr>
+  <tr><td rowspan="4"><b>SMU2</b><br>(Drain, 4-wire)</td>
+      <td>Force HI</td><td>Drain</td><td>Id current lead — carries all drain current</td></tr>
+  <tr><td>Sense HI</td><td>Drain — <i>separate</i> Kelvin contact</td>
+      <td>Vds sense (high side) — no current; reads true drain voltage</td></tr>
+  <tr><td>Force LO</td><td>Source</td><td>Id current return — carries all drain current</td></tr>
+  <tr><td>Sense LO</td><td>Source — <i>separate</i> Kelvin contact</td>
+      <td>Vds sense (low side) — no current; reads true source voltage</td></tr>
+</table>
+
 <pre>
-         SMU2 (Drain, 4-wire)
-         ┌───────────┐
-         │ Force HI  ┼────────────────► Drain current pad  (inner probe)
-         │ Sense HI  ┼────────────────► Drain voltage pad  (outer probe, same node)
-         │ Force LO  ┼────────────────► Source current pad
-         │ Sense LO  ┼────────────────► Source voltage pad (separate Kelvin contact)
-         └───────────┘
+  SMU1 (Gate, 2-wire)
+  ┌───────────┐
+  │ Force HI  ┼──┬─────────────────────────────────────────► Gate
+  │ Sense HI  ┼──┘(tie)
+  │ Force LO  ┼────────────────────────────────────────────► Source (current return)
+  │ Sense LO  ┼────────────────────────────────────────────► Source (tie to F.LO at breakout)
+  └───────────┘
+
+  SMU2 (Drain, 4-wire Kelvin)
+  ┌───────────┐
+  │ Force HI  ┼────────────────────────────────────────────► Drain (current lead)
+  │ Sense HI  ┼────────────────────────────────────────────► Drain (Kelvin sense — separate contact)
+  │ Force LO  ┼────────────────────────────────────────────► Source (current lead)
+  │ Sense LO  ┼────────────────────────────────────────────► Source (Kelvin sense — separate contact)
+  └───────────┘
+
+  Source pad carries four wires:
+    SMU1 Force LO + SMU1 Sense LO (tied, 2-wire) — gate-bias return
+    SMU2 Force LO                                 — drain current return (carries all of Id)
+    SMU2 Sense LO                                 — Kelvin sense (separate contact; no current)
+
+  SMU2 Sense LO must land on a physically separate contact from SMU2 Force LO
+  so that the large Id current through Force LO does not create a voltage drop
+  that Sense LO would also pick up.
 </pre>
+
+<div class="note"><p>
+  <b>Why 2-wire on the Gate?</b>  An enhancement-mode MOSFET gate draws &lt;1 pA of
+  oxide leakage.  Even 100 Ω of lead resistance produces &lt;0.1 pV of Vgs error —
+  completely unmeasurable.  A Kelvin pair on the Gate adds probe complexity with
+  zero practical benefit.
+</p></div>
+
+<div class="note"><p>
+  <b>Why no Source SMU?</b>  The Source is the circuit common (V = 0 V reference) shared
+  by both SMU LOs.  A third SMU on Source is only needed when applying an explicit
+  source bias (e.g. body-effect experiments with V<sub>S</sub> ≠ 0), which is not a
+  standard Transfer or Output sweep.
+</p></div>
 
 <h3>Triax adapter — 2-wire</h3>
 <table>
