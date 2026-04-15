@@ -103,6 +103,10 @@ class SMU2400(SMUBase):
         source_delay_s: float = 0.0,
     ) -> None:
         self._compliance = compliance_current
+        # Clear error queue before issuing a burst of config commands.
+        # Compliance hits and autorange events from the previous measurement
+        # sit in the queue; left uncleared they eventually cause error 350.
+        self._write("*CLS")
         self._write(":SOUR:FUNC VOLT")
         if voltage_range is not None:
             self._write(f":SOUR:VOLT:RANG {voltage_range:.6g}")
@@ -139,6 +143,7 @@ class SMU2400(SMUBase):
         nplc: float = 1.0,
         source_delay_s: float = 0.0,
     ) -> None:
+        self._write("*CLS")
         self._write(":SOUR:FUNC CURR")
         if current_range is not None:
             self._write(f":SOUR:CURR:RANG {current_range:.6g}")

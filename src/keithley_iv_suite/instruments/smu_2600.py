@@ -64,6 +64,14 @@ class SMU2600(SMUBase):
     def reset(self) -> None:
         self._tsp(f"{self._smu}.reset()")
         time.sleep(0.1)
+        # Clear the global error queue.  smu.reset() resets the channel but does
+        # NOT clear errorqueue; compliance hits, autorange transitions, and status
+        # events accumulate across measurements until the queue overflows (max 10
+        # entries), causing error 350 "Queue Overflow" on the LCD.
+        try:
+            self._tsp("errorqueue.clear()")
+        except Exception:
+            pass
         self._tsp(f"{self._smu}.measure.nplc = {self._nplc}")
         # Use literal 2 (AUTOZERO_AUTO) — the symbolic constant smua.AUTOZERO_AUTO
         # is nil on some firmware builds and assigning nil to a protected TSP
@@ -85,6 +93,10 @@ class SMU2600(SMUBase):
     ) -> None:
         self._compliance = compliance_current
         smu = self._smu
+        try:
+            self._tsp("errorqueue.clear()")
+        except Exception:
+            pass
         self._tsp(f"{smu}.source.func = {smu}.OUTPUT_DCVOLTS")
         if voltage_range is not None:
             self._tsp(f"{smu}.source.rangev = {voltage_range:.6g}")
@@ -120,6 +132,10 @@ class SMU2600(SMUBase):
         source_delay_s: float = 0.0,
     ) -> None:
         smu = self._smu
+        try:
+            self._tsp("errorqueue.clear()")
+        except Exception:
+            pass
         self._tsp(f"{smu}.source.func = {smu}.OUTPUT_DCAMPS")
         if current_range is not None:
             self._tsp(f"{smu}.source.rangei = {current_range:.6g}")
