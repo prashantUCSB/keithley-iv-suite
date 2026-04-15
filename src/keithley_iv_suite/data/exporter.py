@@ -80,6 +80,8 @@ def export_csv(
             _write_4pp(writer, result)
         elif mtype == MeasurementType.GENERIC_4PORT:
             _write_generic4(writer, result)
+        elif mtype == MeasurementType.PHOTODIODE_IV:
+            _write_photodiode(writer, result)
         else:
             _write_generic(writer, result)
 
@@ -177,6 +179,15 @@ def _write_generic4(writer: csv.writer, result: dict) -> None:
     vs = result["v_sensed"]
     i_ = result["current"]
     writer.writerow(["v_forced_V", "v_sensed_V", "current_A"])
+    for row in zip(vf, vs, i_):
+        writer.writerow([_fmt(v) for v in row])
+
+
+def _write_photodiode(writer: csv.writer, result: dict) -> None:
+    vf = result["voltage"]
+    vs = result.get("voltage_sensed", np.full_like(vf, float("nan")))
+    i_ = result["current"]
+    writer.writerow(["voltage_forced_V", "voltage_sensed_V", "current_A"])
     for row in zip(vf, vs, i_):
         writer.writerow([_fmt(v) for v in row])
 
@@ -281,6 +292,8 @@ def append_excel_sheet(
             _xlsx_4pp(ws, result, hdr_font, hdr_fill)
         elif mtype == MeasurementType.GENERIC_4PORT:
             _xlsx_generic4(ws, result, hdr_font, hdr_fill)
+        elif mtype == MeasurementType.PHOTODIODE_IV:
+            _xlsx_photodiode(ws, result, hdr_font, hdr_fill)
         else:
             _xlsx_generic(ws, result, hdr_font, hdr_fill)
 
@@ -376,6 +389,15 @@ def _xlsx_generic4(ws, result: dict, hf, fill):
     vs = result["v_sensed"]
     i_ = result["current"]
     _xlsx_col_header(ws, ["v_forced_V", "v_sensed_V", "current_A"], hf, fill)
+    for row in zip(vf, vs, i_):
+        ws.append([float(v) for v in row])
+
+
+def _xlsx_photodiode(ws, result: dict, hf, fill):
+    vf = result["voltage"]
+    vs = result.get("voltage_sensed", np.full_like(vf, float("nan")))
+    i_ = result["current"]
+    _xlsx_col_header(ws, ["voltage_forced_V", "voltage_sensed_V", "current_A"], hf, fill)
     for row in zip(vf, vs, i_):
         ws.append([float(v) for v in row])
 

@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.2.0] — 2026-04-15
+
+### Added
+
+- **Photodiode IV tab** — new measurement mode sweeps voltage from reverse bias
+  (dark current / leakage characterisation, nA–µA range) to forward bias
+  (exponential turn-on, ideality-factor extraction). Anode connected to T1 SMU;
+  cathode grounded. Defaults: −5 V → +1.5 V, 0.05 V step, 100 mA compliance.
+  Full CSV, PNG, and Excel export support. Instructions tab with wiring notes,
+  ideality-factor formula, and source-range guidance.
+  ([sweep_config.py](src/keithley_iv_suite/measurements/sweep_config.py),
+  [photodiode_iv.py](src/keithley_iv_suite/measurements/photodiode_iv.py),
+  [sweep_panel.py](src/keithley_iv_suite/ui/panels/sweep_panel.py))
+
+### Changed
+
+- **Output (Id-Vds) Vds sweep range** extended from ±40 V to ±210 V — allows
+  high-voltage breakdown characterisation on MOSFETs rated above 40 V. The Vds
+  step maximum is also raised from 10 V to 50 V to keep point counts manageable
+  at wide sweeps.
+  ([sweep_panel.py](src/keithley_iv_suite/ui/panels/sweep_panel.py))
+
+- **Transfer (Id-Vgs) voltage ranges** extended to ±210 V for Vgs and Vds fixed
+  bias, matching the Output tab.
+
+- **Source SMU compliance** for nMOS Output sweeps now inherits `compliance_drain_A`
+  from the sweep config (was hardcoded to 100 mA). If drain compliance is raised to
+  500 mA or 1 A, the source SMU now matches, preventing premature compliance trips.
+  ([nmos_output.py](src/keithley_iv_suite/measurements/nmos_output.py))
+
+---
+
 ## [2.1.0] — 2026-04-14
 
 ### Added

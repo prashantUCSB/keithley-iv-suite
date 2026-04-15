@@ -18,6 +18,7 @@ from ...measurements.sweep_config import (
     HallBarConfig,
     MeasurementType,
     OutputConfig,
+    PhotodiodeConfig,
     ResistorConfig,
     TerminalAssignment,
     TerminalRole,
@@ -450,10 +451,10 @@ class TransferTab(QWidget):
         params = QGroupBox("Sweep Parameters")
         form = QFormLayout(params)
         form.setSpacing(6)
-        self.vgs_start = _spin(-1.0)
-        self.vgs_stop  = _spin(3.0)
-        self.vgs_step  = _spin(0.05, mn=1e-4, mx=10.0, step=0.01)
-        self.vds_fixed = _spin(0.1, mn=-40.0, mx=40.0)
+        self.vgs_start = _spin(-1.0, mn=-210.0, mx=210.0)
+        self.vgs_stop  = _spin(3.0,  mn=-210.0, mx=210.0)
+        self.vgs_step  = _spin(0.05, mn=1e-4,   mx=50.0, step=0.01)
+        self.vds_fixed = _spin(0.1,  mn=-210.0, mx=210.0)
         for w, s in [(self.vgs_start, " V"), (self.vgs_stop, " V"),
                      (self.vgs_step, " V"), (self.vds_fixed, " V")]:
             w.setSuffix(s)
@@ -539,9 +540,9 @@ class OutputTab(QWidget):
         params = QGroupBox("Sweep Parameters")
         form = QFormLayout(params)
         form.setSpacing(6)
-        self.vds_start = _spin(0.0)
-        self.vds_stop  = _spin(3.0)
-        self.vds_step  = _spin(0.05, mn=1e-4, mx=10.0, step=0.01)
+        self.vds_start = _spin(0.0,  mn=-210.0, mx=210.0)
+        self.vds_stop  = _spin(3.0,  mn=-210.0, mx=210.0)
+        self.vds_step  = _spin(0.05, mn=1e-4,   mx=50.0, step=0.1)
         self.vgs_list_edit = QLineEdit("0.5, 1.0, 1.5, 2.0, 2.5, 3.0")
         for w, s in [(self.vds_start, " V"), (self.vds_stop, " V"), (self.vds_step, " V")]:
             w.setSuffix(s)
@@ -680,6 +681,115 @@ class ResistorTab(QWidget):
     def build_config(self) -> ResistorConfig:
         q = self._q
         return ResistorConfig(
+            label=self.label_edit.text().strip(),
+            v_start=self.v_start.value(),
+            v_stop=self.v_stop.value(),
+            v_step=self.v_step.value(),
+            compliance_A=self.comp.value(),
+            nplc=q["nplc"].value(),
+            settling_delay_s=q["settling_ms"].value() / 1000.0,
+            source_delay_s=q["source_dly_ms"].value() / 1000.0,
+            sense_range_A=q["sense_range"].currentData(),
+            source_range_V=q["source_range"].currentData(),
+            assignments=self.assignment.get_assignments(),
+        )
+
+
+# ── Photodiode IV Tab ────────────────────────────────────────────────────────
+
+def _photodiode_instructions_html() -> str:
+    T = theme.TEXT_PRIMARY
+    S = theme.TEXT_SECONDARY
+    A = theme.AMBER
+    return (
+        f'<style>h3{{color:{A};margin:4px 0 4px 0}}p{{color:{S};margin:0 0 8px 0}}'
+        f'b{{color:{T}}}</style>'
+        f'<h3>Wiring</h3>'
+        f'<p><b>Anode</b> → SMU output (T1). '
+        f'<b>Cathode</b> → ground (chassis / Force Lo).</p>'
+        f'<h3>Reverse Bias</h3>'
+        f'<p>Negative V sweeps reveal <b>dark current</b> (leakage, ideally nA–µA). '
+        f'Use the smallest current sense range that covers the expected leakage to '
+        f'minimise noise.  Typical range: 1&nbsp;nA – 100&nbsp;µA.</p>'
+        f'<h3>Forward Bias</h3>'
+        f'<p>Current rises exponentially above V<sub>f</sub> (~0.6&nbsp;V for Si, '
+        f'~1.1&nbsp;V for GaN, ~0.2&nbsp;V for Ge / InGaAs). '
+        f'Set compliance high enough to capture the full turn-on; '
+        f'protect the device with a reasonable forward limit (≤ rated I<sub>f</sub>).</p>'
+        f'<h3>Ideality Factor</h3>'
+        f'<p>In the forward region I&nbsp;=&nbsp;I<sub>0</sub>&nbsp;exp(qV/n·kT). '
+        f'Slope of ln(I) vs V gives n: <b>n&nbsp;=&nbsp;q/(kT·slope)</b>. '
+        f'Ideal diode: n&nbsp;=&nbsp;1; recombination-dominated: n&nbsp;≈&nbsp;2.</p>'
+        f'<h3>Source Range</h3>'
+        f'<p>Set to the smallest range that covers your full voltage sweep. '
+        f'<b>Example:</b> ±5&nbsp;V sweep → choose <b>20&nbsp;V</b> range.</p>'
+    )
+
+
+class PhotodiodeTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self._inner = QTabWidget()
+
+        sw = QWidget()
+        layout = QVBoxLayout(sw)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        self.assignment = _AssignmentGroup(
+            [TerminalRole.TERMINAL_1, TerminalRole.TERMINAL_2],
+            "SMU Assignment",
+        )
+        # Rename labels to Anode/Cathode in the assignment group tooltip
+        layout.addWidget(self.assignment)
+
+        params = QGroupBox("Sweep Parameters")
+        form = QFormLayout(params)
+        form.setSpacing(6)
+        self.v_start = _spin(-5.0, mn=-210.0, mx=210.0)
+        self.v_stop  = _spin(1.5,  mn=-210.0, mx=210.0)
+        self.v_step  = _spin(0.05, mn=1e-4,   mx=50.0, step=0.01)
+        self.comp    = _spin(0.1,  mn=1e-9,   mx=1.5,  step=0.01)
+        for w, s in [(self.v_start, " V"), (self.v_stop, " V"),
+                     (self.v_step, " V"), (self.comp, " A")]:
+            w.setSuffix(s)
+        form.addRow("V start (rev):", self.v_start)
+        form.addRow("V stop (fwd):",  self.v_stop)
+        form.addRow("V step:",        self.v_step)
+        form.addRow("Compliance:",    self.comp)
+        hint = QLabel("Anode → T1 SMU  ·  Cathode → Ground (T2 / Force Lo)")
+        hint.setProperty("role", "muted")
+        hint.setWordWrap(True)
+        form.addRow("", hint)
+        layout.addWidget(params)
+
+        self.label_edit = QLineEdit()
+        self.label_edit.setPlaceholderText("Run label (optional)")
+        layout.addWidget(self.label_edit)
+        layout.addStretch()
+
+        aw = QWidget()
+        al = QVBoxLayout(aw)
+        al.setContentsMargins(8, 8, 8, 8)
+        al.setSpacing(8)
+        qual, self._q = _quality_group_vsource()
+        al.addWidget(qual)
+        al.addStretch()
+
+        self._inner.addTab(sw, "Settings")
+        self._inner.addTab(aw, "Advanced")
+        self._inner.addTab(_instructions_widget(_photodiode_instructions_html()), "Instructions")
+        outer.addWidget(self._inner, stretch=1)
+
+    def update_instruments(self, smu_map):
+        self.assignment.populate(smu_map)
+
+    def build_config(self) -> PhotodiodeConfig:
+        q = self._q
+        return PhotodiodeConfig(
             label=self.label_edit.text().strip(),
             v_start=self.v_start.value(),
             v_stop=self.v_stop.value(),
@@ -1195,17 +1305,19 @@ class SweepPanel(QWidget):
         self._transfer_tab   = TransferTab()
         self._output_tab     = OutputTab()
         self._resistor_tab   = ResistorTab()
+        self._photodiode_tab = PhotodiodeTab()
         self._vdp_tab        = VanDerPauwTab()
         self._hall_tab       = HallBarTab()
         self._fpp_tab        = FourPointProbeTab()
         self._generic4p_tab  = Generic4PortTab()
-        self._tabs.addTab(self._transfer_tab,  "Transfer (Id-Vgs)")
-        self._tabs.addTab(self._output_tab,    "Output (Id-Vds)")
-        self._tabs.addTab(self._resistor_tab,  "Resistor IV")
-        self._tabs.addTab(self._vdp_tab,       "Van der Pauw")
-        self._tabs.addTab(self._hall_tab,      "Hall Bar")
-        self._tabs.addTab(self._fpp_tab,       "4-Point Probe")
-        self._tabs.addTab(self._generic4p_tab, "Generic 4-Port")
+        self._tabs.addTab(self._transfer_tab,   "Transfer (Id-Vgs)")
+        self._tabs.addTab(self._output_tab,     "Output (Id-Vds)")
+        self._tabs.addTab(self._resistor_tab,   "Resistor IV")
+        self._tabs.addTab(self._photodiode_tab, "Photodiode IV")
+        self._tabs.addTab(self._vdp_tab,        "Van der Pauw")
+        self._tabs.addTab(self._hall_tab,        "Hall Bar")
+        self._tabs.addTab(self._fpp_tab,         "4-Point Probe")
+        self._tabs.addTab(self._generic4p_tab,   "Generic 4-Port")
         root.addWidget(self._tabs, stretch=1)
 
         btn_row = QHBoxLayout()
@@ -1227,7 +1339,8 @@ class SweepPanel(QWidget):
     def update_instruments(self, smu_map: dict[str, SMUBase]):
         self._smu_map = smu_map
         for tab in (self._transfer_tab, self._output_tab, self._resistor_tab,
-                    self._vdp_tab, self._hall_tab, self._fpp_tab, self._generic4p_tab):
+                    self._photodiode_tab, self._vdp_tab, self._hall_tab,
+                    self._fpp_tab, self._generic4p_tab):
             tab.update_instruments(smu_map)
 
     def set_running(self, running: bool):
@@ -1251,5 +1364,6 @@ class SweepPanel(QWidget):
     def _current_config(self):
         idx = self._tabs.currentIndex()
         tabs = [self._transfer_tab, self._output_tab, self._resistor_tab,
-                self._vdp_tab, self._hall_tab, self._fpp_tab, self._generic4p_tab]
+                self._photodiode_tab, self._vdp_tab, self._hall_tab,
+                self._fpp_tab, self._generic4p_tab]
         return tabs[idx].build_config()

@@ -9,7 +9,8 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from ...instruments.smu_base import SMUBase
 from ...measurements.sweep_config import (
     FourPointProbeConfig, Generic4PortConfig, HallBarConfig, MeasurementType,
-    OutputConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
+    OutputConfig, PhotodiodeConfig, ResistorConfig, SweepConfig, TransferConfig,
+    VanDerPauwConfig,
 )
 from ...measurements.nmos_transfer import run_transfer_sweep
 from ...measurements.nmos_output import run_output_sweep
@@ -18,6 +19,7 @@ from ...measurements.van_der_pauw import run_vdp_sweep
 from ...measurements.hall_bar import run_hall_sweep
 from ...measurements.four_point_probe import run_four_point_probe
 from ...measurements.generic_4port import run_generic_4port
+from ...measurements.photodiode_iv import run_photodiode_sweep
 
 log = logging.getLogger(__name__)
 
@@ -167,6 +169,17 @@ class MeasurementWorker(QThread):
                 v_smu=v_smu,
                 progress_cb=lambda s, t: self.progress.emit(s, t),
                 data_cb=lambda i, v, vs, ci: self.data_point.emit(i, v, vs, ci),
+                abort_flag=self._abort_flag,
+            )
+
+        if mtype == MeasurementType.PHOTODIODE_IV:
+            assert isinstance(cfg, PhotodiodeConfig)
+            smu = self._resolve("terminal_1", cfg)
+            return run_photodiode_sweep(
+                config=cfg,
+                smu=smu,
+                progress_cb=lambda s, t: self.progress.emit(s, t),
+                data_cb=lambda vf, i, vs: self.data_point.emit(vf, i, vs, 0),
                 abort_flag=self._abort_flag,
             )
 

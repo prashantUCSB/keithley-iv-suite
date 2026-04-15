@@ -70,7 +70,7 @@ def run_output_sweep(
 
     if source_smu is not None:
         source_smu.reset()
-        source_smu.configure_voltage_source(compliance_current=0.1)
+        source_smu.configure_voltage_source(compliance_current=config.compliance_drain_A)
         source_smu.set_voltage(0.0)
         source_smu.output_on()
 

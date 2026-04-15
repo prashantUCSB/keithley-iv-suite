@@ -14,6 +14,7 @@ class MeasurementType(Enum):
     HALL_BAR         = "Hall Bar (Rxy, n, µ)"
     GENERIC_4PORT    = "Generic 4-Port"
     FOUR_POINT_PROBE = "Four-Point Probe (Rs)"
+    PHOTODIODE_IV    = "Photodiode IV"
 
 
 class TerminalRole(Enum):
@@ -319,3 +320,31 @@ class FourPointProbeConfig(SweepConfig):
     def i_list(self) -> list[float]:
         n = self.i_points
         return [round(self.i_start + k * self.i_step, 15) for k in range(n)]
+
+
+@dataclass
+class PhotodiodeConfig(SweepConfig):
+    """Photodiode IV: two-terminal voltage sweep from reverse to forward bias.
+
+    Anode is driven by the SMU; cathode is grounded.
+    Reverse bias reveals dark current / leakage; forward bias shows
+    the exponential diode turn-on and allows ideality-factor extraction.
+    """
+    measurement_type: MeasurementType = MeasurementType.PHOTODIODE_IV
+    v_start: float = -5.0       # V  (reverse bias)
+    v_stop:  float = 1.5        # V  (past forward turn-on ~0.6–1.2 V)
+    v_step:  float = 0.05       # V
+    compliance_A: float = 0.1   # A  (protect device in forward bias)
+    # Range controls
+    sense_range_A: Optional[float] = None
+    source_range_V: Optional[float] = None
+
+    @property
+    def v_points(self) -> int:
+        if self.v_step == 0:
+            return 1
+        return int(abs(self.v_stop - self.v_start) / abs(self.v_step)) + 1
+
+    def v_list(self) -> list[float]:
+        n = self.v_points
+        return [round(self.v_start + i * self.v_step, 9) for i in range(n)]

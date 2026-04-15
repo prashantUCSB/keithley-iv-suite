@@ -21,7 +21,7 @@ from ..measurements.queue_manager import MeasurementQueue, QueueItemStatus
 from ..measurements.recipe_loader import load_recipe
 from ..measurements.sweep_config import (
     FourPointProbeConfig, Generic4PortConfig, HallBarConfig, OutputConfig,
-    ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
+    PhotodiodeConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
 )
 from ..data.exporter import export_csv, default_filename
 from .panels import InstrumentPanel, SweepPanel, PlotPanel, QueuePanel
@@ -647,6 +647,8 @@ class MainWindow(QMainWindow):
             return config.v_points
         if isinstance(config, FourPointProbeConfig):
             return config.i_points
+        if isinstance(config, PhotodiodeConfig):
+            return config.v_points
         return 0
 
     def _show_wiring_guide(self):

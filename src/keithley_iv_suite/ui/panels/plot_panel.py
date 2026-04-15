@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (
 from .. import theme
 from ...measurements.sweep_config import (
     FourPointProbeConfig, Generic4PortConfig, HallBarConfig, MeasurementType,
-    OutputConfig, ResistorConfig, SweepConfig, TransferConfig, VanDerPauwConfig,
+    OutputConfig, PhotodiodeConfig, ResistorConfig, SweepConfig, TransferConfig,
+    VanDerPauwConfig,
 )
 
 pg.setConfigOptions(antialias=True, foreground=theme.TEXT_SECONDARY, background=theme.PLOT_BG)
@@ -61,6 +62,10 @@ _AXIS_CONFIG: dict[MeasurementType, tuple[str, str, str, str]] = {
     MeasurementType.FOUR_POINT_PROBE: (
         "<i>I</i><sub>force</sub>",   "A",
         "<i>V</i><sub>sense</sub>",   "V",
+    ),
+    MeasurementType.PHOTODIODE_IV: (
+        "<i>V</i><sub>anode</sub>", "V",
+        "<i>I</i>",                 "A",
     ),
 }
 
