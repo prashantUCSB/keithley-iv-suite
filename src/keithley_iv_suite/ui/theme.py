@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # ── App identity ─────────────────────────────────────────────────────────────
-VERSION   = "2.2.1"
+VERSION   = "2.2.2"
 DEVELOPER = "Prashant Srinivasan"
 
 GREEN_BRIGHT = "#22c55e"   # version badge

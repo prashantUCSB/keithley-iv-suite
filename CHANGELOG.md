@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.2.2] — 2026-04-15
+
+### Fixed
+
+- **Error 802 "Output blocked by interlock"** — the 2600-series requires the
+  INTLK pin shorted to AGND on the rear-panel digital I/O connector before
+  allowing outputs above ~42 V.  Previously this caused a silent failure or a
+  cryptic VISA exception.  The driver now detects error 802 in `output_on()` and
+  in `set_voltage()` (checked whenever the setpoint crosses 42 V) and raises a
+  `RuntimeError` with a clear, actionable message:
+  *"Short INTLK to AGND on the rear-panel digital I/O connector before sourcing
+  above ~42 V (see instrument manual)."*
+  ([smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
+
+---
+
 ## [2.2.1] — 2026-04-15
 
 ### Fixed

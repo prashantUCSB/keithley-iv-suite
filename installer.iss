@@ -13,12 +13,12 @@
 ;   3. Compile:  ISCC.exe installer.iss
 ;      (or open this file in the Inno Setup IDE and press F9)
 ;
-; OUTPUT:  release\Keithley_IV_Suite_v2.2.1_Setup.exe
+; OUTPUT:  release\Keithley_IV_Suite_v2.2.2_Setup.exe
 ;          (~130 MB self-extracting installer, no dependencies needed)
 ; ============================================================
 
 #define AppName      "Keithley IV Suite"
-#define AppVersion   "2.2.1"
+#define AppVersion   "2.2.2"
 #define AppPublisher "Prashant Srinivasan"
 #define AppExeName   "Keithley_IV_Suite.exe"
 

@@ -122,6 +122,24 @@ class SMU2600(SMUBase):
 
     def set_voltage(self, voltage: float) -> None:
         self._tsp(f"{self._smu}.source.levelv = {voltage:.6g}")
+        # Spot-check error queue at the interlock boundary.  The 2600 trips
+        # error 802 when the setpoint crosses ~42 V with INTLK unconnected.
+        if abs(voltage) >= 42.0:
+            try:
+                count = int(float(self._tsp_query("errorqueue.count")))
+                if count > 0:
+                    err_raw = self._tsp_query("errorqueue.next()")
+                    if "802" in err_raw:
+                        raise RuntimeError(
+                            f"Output blocked by interlock (error 802) at {voltage:.3g} V.\n\n"
+                            "Short INTLK to AGND on the rear-panel digital I/O connector "
+                            "before sourcing above ~42 V (see instrument manual)."
+                        )
+                    log.warning("SMU2600 set_voltage: unexpected error in queue: %s", err_raw)
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
 
     def configure_current_source(
         self,
@@ -166,6 +184,29 @@ class SMU2600(SMUBase):
         self._tsp(f"{self._smu}.source.output = {self._smu}.OUTPUT_ON")
         self._output_on = True
         time.sleep(self._delay_s)
+        # Check for error 802 (output blocked by interlock).  The 2600-series
+        # requires INTLK shorted to AGND on the rear-panel digital I/O connector
+        # before it will allow outputs above ~42 V.  Without it the command
+        # silently fails and error 802 appears on the LCD.
+        try:
+            count = int(float(self._tsp_query("errorqueue.count")))
+            if count > 0:
+                err_raw = self._tsp_query("errorqueue.next()")
+                if "802" in err_raw:
+                    self._output_on = False
+                    raise RuntimeError(
+                        "Output blocked by interlock (error 802).\n\n"
+                        "On the rear panel, short the INTLK pin to AGND on the "
+                        "digital I/O connector (typically a wire between pins 6 and 7 "
+                        "of the 25-pin connector, but verify against your model's "
+                        "manual).  This is required whenever sourcing above ~42 V."
+                    )
+                # Not 802 — re-queue the error so the normal error handler sees it
+                log.warning("SMU2600 output_on: unexpected error in queue: %s", err_raw)
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
 
     def output_off(self) -> None:
         self._tsp(f"{self._smu}.source.output = {self._smu}.OUTPUT_OFF")
