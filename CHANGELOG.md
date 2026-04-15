@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.2.1] — 2026-04-15
+
+### Fixed
+
+- **Error 350 "Queue Overflow" on instrument LCD** — the Keithley error/event
+  queue (max 10 entries on 2600-series) was never cleared between measurements.
+  Compliance hits, autorange transitions, and source range changes are silently
+  logged as status events; once the queue fills, the instrument appends error 350
+  and displays it on the front panel.
+  - *2600 driver*: `smu.reset()` resets the channel but does **not** touch the
+    global `errorqueue`. Added `errorqueue.clear()` in `reset()` and at the start
+    of `configure_voltage_source` / `configure_current_source`.
+  - *2400 driver*: `reset()` already issues `*CLS`, but added it at the top of
+    both configure methods as a second line of defence — events from the previous
+    measurement can accumulate between `reset()` and `configure_*`.
+  ([smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py),
+  [smu_2400.py](src/keithley_iv_suite/instruments/smu_2400.py))
+
+---
+
 ## [2.2.0] — 2026-04-15
 
 ### Added
