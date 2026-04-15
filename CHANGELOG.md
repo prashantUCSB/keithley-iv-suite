@@ -16,7 +16,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   in `set_voltage()` (checked whenever the setpoint crosses 42 V) and raises a
   `RuntimeError` with a clear, actionable message:
   *"Short INTLK to AGND on the rear-panel digital I/O connector before sourcing
-  above ~42 V (see instrument manual)."*
+  above ~42 V — see the Interlock section of your model's Reference Manual for
+  exact pin numbers."*
   ([smu_2600.py](src/keithley_iv_suite/instruments/smu_2600.py))
 
 ---

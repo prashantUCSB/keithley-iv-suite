@@ -133,7 +133,8 @@ class SMU2600(SMUBase):
                         raise RuntimeError(
                             f"Output blocked by interlock (error 802) at {voltage:.3g} V.\n\n"
                             "Short INTLK to AGND on the rear-panel digital I/O connector "
-                            "before sourcing above ~42 V (see instrument manual)."
+                            "before sourcing above ~42 V.  See the Interlock section of "
+                            "your model's Reference Manual for exact pin numbers."
                         )
                     log.warning("SMU2600 set_voltage: unexpected error in queue: %s", err_raw)
             except RuntimeError:
@@ -196,10 +197,10 @@ class SMU2600(SMUBase):
                     self._output_on = False
                     raise RuntimeError(
                         "Output blocked by interlock (error 802).\n\n"
-                        "On the rear panel, short the INTLK pin to AGND on the "
-                        "digital I/O connector (typically a wire between pins 6 and 7 "
-                        "of the 25-pin connector, but verify against your model's "
-                        "manual).  This is required whenever sourcing above ~42 V."
+                        "The instrument requires the INTLK pin shorted to AGND on "
+                        "the rear-panel digital I/O connector before allowing outputs "
+                        "above ~42 V.  Refer to the Interlock section of your "
+                        "model's Reference Manual for the exact pin numbers."
                     )
                 # Not 802 — re-queue the error so the normal error handler sees it
                 log.warning("SMU2600 output_on: unexpected error in queue: %s", err_raw)
