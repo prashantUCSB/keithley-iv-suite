@@ -1,6 +1,6 @@
 # Keithley IV Suite
 
-**Multi-SMU IV Characterization Platform** — PyQt6 desktop app for measuring nMOS transistors and resistors with Keithley 2400, 2401, 2602, and 2614B source-measure units. Built primarily for internal use. Download and modify as you please. I am not taking feature requests or providing support. I am not a SW developer and I won't pretend to be one. Vibe coded with Claude!
+**Multi-SMU IV Characterization Platform** — PyQt6 desktop app for measuring nMOS transistors and resistors with Keithley 2400, 2401, 2602, and 2614B source-measure units. Built primarily for internal use. Download and modify as you please. I am not taking feature requests or providing support. I am not a professional software developer and I don't pretend to be one. Coded with assistance from ClaudeAI.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![PyQt6](https://img.shields.io/badge/UI-PyQt6-amber)
